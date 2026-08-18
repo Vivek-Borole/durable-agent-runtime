@@ -10,3 +10,19 @@
 | Cost exhaustion | Per-tenant budget ledger, quotas, cancellation, and hard pre-dispatch checks. |
 | Queue or worker failure | Durable outbox, leased tasks, heartbeats, recovery, and explicit uncertain state. |
 
+## Trust boundaries
+
+```mermaid
+flowchart TB
+  Tenant["Tenant API key"] --> Control["Control role + RLS"]
+  Control --> QueueFunction["Guarded queue function"]
+  QueueFunction --> Outbox[("Outbox")]
+  Worker["Worker role"] --> Outbox
+  Worker --> Runtime[("Runs / effects")]
+  Control -.-x Outbox
+  Control -.-x Lease["lease_owner / lease_expires_at"]
+  Worker -.-x Keys["API key hashes / principals"]
+```
+
+The local role passwords are fixtures only. Deployment replaces them with
+externally managed secrets while preserving the same grants and RLS policies.

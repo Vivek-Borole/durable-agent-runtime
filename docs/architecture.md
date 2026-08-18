@@ -4,6 +4,20 @@
 
 `API -> PostgreSQL transaction/outbox -> JetStream -> Go worker -> registered tool/model -> PostgreSQL event/audit -> OpenTelemetry`
 
+```mermaid
+flowchart LR
+  Console["Tenant console"] --> API["Control plane\nRLS-scoped role"]
+  API --> PG[("PostgreSQL\nruns + events + outbox")]
+  API -. "SECURITY DEFINER\nqueue function" .-> Outbox["Transactional outbox"]
+  Outbox --> Publisher["Publisher\nworker role"]
+  Publisher --> JS["JetStream\nat-least-once"]
+  JS --> Worker["Go worker\nworker role"]
+  Worker --> Tools["Registered tools only"]
+  Worker --> PG
+  API -. "safe spans" .-> OTEL["OTLP collector"]
+  Worker -. "safe spans" .-> OTEL
+```
+
 PostgreSQL is the durable source of truth for tenants, principals, workflow
 versions, runs, step attempts, approvals, idempotency records, budgets, and the
 transactional outbox. JetStream provides at-least-once task delivery. Redis is
@@ -29,6 +43,32 @@ record. The runtime therefore guarantees no duplicate **committed** external
 effect for an equivalent key; it does not claim impossible global exactly-once
 execution.
 
+## Run state machine and recovery
+
+```mermaid
+stateDiagram-v2
+  [*] --> queued: committed run + outbox
+  queued --> leased: worker claim
+  leased --> running: durable start record
+  running --> awaiting_approval: approval step
+  awaiting_approval --> queued: approved; next step only
+  queued --> cancelled: cancellation
+  leased --> queued: lease expires before durable work
+  running --> queued: read-only interruption after lease expiry
+  running --> uncertain: ambiguous side effect or credential loss
+  running --> failed: deterministic validation/tool failure
+  running --> succeeded: all steps recorded
+  awaiting_approval --> cancelled: cancellation
+  succeeded --> [*]
+  failed --> [*]
+  cancelled --> [*]
+  uncertain --> [*]
+```
+
+An expired lease is eligible for one new claim. A crash before an idempotent
+effect ledger commit can retry after expiry; an interruption at an ambiguous
+effect boundary is recorded as `uncertain` rather than blindly retried.
+
 ## Workflow v1
 
 Definitions are immutable and linear. Each step is one of `model`, `transform`,
@@ -37,6 +77,7 @@ egress. Approval is required before configured side-effecting tools can run.
 
 ## Observability and secrets
 
-Every run and step emits a trace. Logs and trace attributes contain identifiers,
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, every control-plane request
+and worker run/step emits a trace. Logs and trace attributes contain identifiers,
 durations, outcomes, and redacted error classes, never provider keys or raw
 secret-bearing prompts/tool input. The console displays redacted event evidence.
