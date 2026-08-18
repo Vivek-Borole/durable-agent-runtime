@@ -8,4 +8,4 @@ coverage/
 bin/
 tmp/
 reports/*.json
-worker
+/worker
