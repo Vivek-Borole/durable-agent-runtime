@@ -54,4 +54,5 @@ effect-ledger race test. The 100,000-attempt fault run, worker restart recovery,
 release gates, not verified claims.
 
 Read [the architecture](docs/architecture.md), [threat model](docs/threat-model.md),
-and [API contract](contracts/openapi.yaml) before extending the runtime.
+[API contract](contracts/openapi.yaml), [Compose quick start](docs/compose-quickstart.md),
+and [API examples](docs/api-examples.md) before extending the runtime.
