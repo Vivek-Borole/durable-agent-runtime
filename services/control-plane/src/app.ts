@@ -70,7 +70,8 @@ export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenan
       const result = await store.createRun(principal, persisted, key);
       return reply.code(result.replayed ? 200 : 201).send({ run: result.run, replayed: result.replayed });
     } catch (error) {
-      return reply.code(404).send({ error: error instanceof Error ? error.message : "run_creation_failed" });
+      const message = error instanceof Error ? error.message : "run_creation_failed";
+      return reply.code(message.includes("quota") ? 429 : message === "Workflow not found" ? 404 : 500).send({ error: message });
     }
   });
 

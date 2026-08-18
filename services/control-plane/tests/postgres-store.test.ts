@@ -105,4 +105,13 @@ integration("PostgreSQL durable store", () => {
     await expect(store.pool.query<{ current_step: number }>("select current_step from workflow_runs where id = $1", [created.run.id])).resolves.toMatchObject({ rows: [{ current_step: 1 }] });
     await expect(store.pool.query<{ count: string }>("select count(*) from workflow_outbox where run_id = $1", [created.run.id])).resolves.toMatchObject({ rows: [{ count: "2" }] });
   });
+
+  it("enforces active run limits under the tenant transaction lock", async () => {
+    const principal = await store.authenticate(secondTenantSlug, secondApiKey);
+    if (!principal) throw new Error("fixture authentication failed");
+    const limitedWorkflow = await store.createWorkflow(principal, { ...workflow, name: "limit-fixture" });
+    await store.pool.query("update tenant_runtime_limits set max_active_runs = 1, max_runs_per_day = 1000 where tenant_id = $1", [principal.tenantId]);
+    await store.createRun(principal, { workflowId: limitedWorkflow.id, input: {} }, "postgres-limit-key-0001");
+    await expect(store.createRun(principal, { workflowId: limitedWorkflow.id, input: {} }, "postgres-limit-key-0002")).rejects.toThrow("Active run quota exceeded");
+  });
 });

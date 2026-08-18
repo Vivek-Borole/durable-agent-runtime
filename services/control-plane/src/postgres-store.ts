@@ -75,6 +75,7 @@ export class PostgresDurableStore implements RuntimeStore {
         [seed.tenantSlug]
       );
       const tenantId = tenant.rows[0]!.id;
+      await client.query("insert into tenant_runtime_limits (tenant_id) values ($1) on conflict (tenant_id) do nothing", [tenantId]);
       const principal = await client.query<{ id: string }>(
         `insert into principals (tenant_id, subject, role) values ($1, $2, $3::dar_role)
          on conflict (tenant_id, subject) do update set role = excluded.role returning id`,
@@ -128,6 +129,20 @@ export class PostgresDurableStore implements RuntimeStore {
         [principal.tenantId, idempotencyKey]
       );
       if (existing.rows[0]) return { run: await this.readRunInTransaction(client, principal.tenantId, existing.rows[0]!), replayed: true };
+
+      const limits = await client.query<{ max_active_runs: number; max_runs_per_day: number }>(
+        "select max_active_runs, max_runs_per_day from tenant_runtime_limits where tenant_id = $1 for update",
+        [principal.tenantId]
+      );
+      if (!limits.rows[0]) throw new Error("Tenant runtime limits missing");
+      const usage = await client.query<{ active: string; created_today: string }>(
+        `select count(*) filter (where state in ('queued', 'leased', 'running', 'awaiting_approval')) as active,
+                count(*) filter (where created_at >= date_trunc('day', now() at time zone 'utc')) as created_today
+         from workflow_runs where tenant_id = $1`,
+        [principal.tenantId]
+      );
+      if (Number(usage.rows[0]!.active) >= limits.rows[0].max_active_runs) throw new Error("Active run quota exceeded");
+      if (Number(usage.rows[0]!.created_today) >= limits.rows[0].max_runs_per_day) throw new Error("Daily run quota exceeded");
 
       const workflow = await client.query<{ id: string; budget_cents: number }>(
         "select id, budget_cents from workflow_definitions where id = $1 and tenant_id = $2",
