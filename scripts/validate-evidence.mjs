@@ -32,4 +32,14 @@ const recovery = await readJson("docs/evidence/lease-recovery-report.json");
 assert(recovery.passed === true, "lease recovery evidence did not pass");
 assert(recovery.attempts === 2 && recovery.committedEffects === 1 && recovery.finalState === "succeeded", "lease recovery outcome is incomplete");
 
+const processRecovery = await readJson("docs/evidence/process-recovery-report.json");
+assert(processRecovery.passed === true, "process recovery evidence did not pass");
+assert(processRecovery.firstWorkerKilled === true && processRecovery.leaseExpired === true && processRecovery.replacementClaimed === true, "process recovery must prove an interrupted worker, lease expiry, and handoff");
+assert(processRecovery.finalState === "succeeded" && processRecovery.committedEffects === 0, "process recovery mock-read outcome is incorrect");
+
+const otelTrace = await readFile(new URL("../docs/evidence/otel-control-plane-trace.log", import.meta.url), "utf8");
+assert(otelTrace.includes("service.name: durable-agent-runtime-control-plane"), "OTel evidence must identify the control plane");
+assert(otelTrace.includes("url.path: /healthz") && otelTrace.includes("url.path: /metrics"), "OTel evidence must prove safe request spans");
+assert(!/(Bearer\s+|api[_-]?key\s*[:=]|providerCredential|sk-)/i.test(otelTrace), "OTel evidence contains a secret-like value");
+
 console.log("release evidence schema is valid");

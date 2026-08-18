@@ -48,9 +48,30 @@ lease and committing exactly one mock effect. It is intentionally labelled as
 a simulation; the Compose integration suite remains the place for a real
 process-termination test.
 
+Reproduce the real worker-process interruption report:
+
+```bash
+go build -o /tmp/durable-agent-runtime-worker ./services/worker
+DAR_BENCHMARK_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
+DAR_WORKER_BINARY=/tmp/durable-agent-runtime-worker \
+go run ./cmd/process-recovery
+```
+
+The fixture kills a local worker during a synthetic mock-step database write,
+waits for its standard 30-second lease to expire, sends a duplicate delivery,
+and verifies that the replacement worker succeeds without a committed effect.
+
+`otel-control-plane-trace.log` records the local collector's synthetic request
+spans. It contains only service name, method, route, and status—not headers,
+tenant identifiers, prompts, provider credentials, or API keys.
+
 ## Screenshots
 
 `screenshots/console-awaiting-approval.png` and
 `screenshots/console-succeeded.png` are captured from the local console using
 only the `synthetic-demo` tenant and a mock ticket tool. The API key field is
 masked, no provider credential was used, and no external system was contacted.
+
+`screenshots/grafana-runtime-overview.png` is the local provisioned Grafana
+dashboard. Its HTTP panels are populated only by synthetic local requests.

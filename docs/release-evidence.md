@@ -12,9 +12,7 @@ Completed synthetic evidence:
 
 Before the repository becomes public, still attach:
 
-- a real worker-process termination/restart Compose report, plus raw
-  benchmark/fault logs and a report-schema check;
-- an exported OpenTelemetry trace and a synthetic Grafana dashboard screenshot;
+- raw benchmark/fault logs and a report-schema check;
 - a short video made only with synthetic data;
 - a clean-machine Compose smoke-test log;
 - GitHub Actions verification, GitHub Pages publication, release assets, tag,

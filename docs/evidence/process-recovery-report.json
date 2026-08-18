@@ -1,0 +1,11 @@
+{
+  "scenario": "worker killed during a held mock-step write; expired lease plus duplicate delivery recovered",
+  "firstWorkerKilled": true,
+  "leaseExpired": true,
+  "replacementClaimed": true,
+  "attempts": 2,
+  "committedEffects": 0,
+  "finalState": "succeeded",
+  "passed": true,
+  "completedAt": "2026-08-18T22:37:56.94026Z"
+}

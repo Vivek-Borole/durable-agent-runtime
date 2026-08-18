@@ -1,0 +1,22 @@
+Synthetic local OpenTelemetry evidence
+
+Collector: otel/opentelemetry-collector-contrib:0.126.0
+Service: durable-agent-runtime-control-plane
+Exporter: local collector debug exporter
+Requests: GET /healthz, GET /metrics
+
+Resource attributes:
+  service.name: durable-agent-runtime-control-plane
+
+Span: http.request
+  http.request.method: GET
+  url.path: /healthz
+  http.response.status_code: 200
+
+Span: http.request
+  http.request.method: GET
+  url.path: /metrics
+  http.response.status_code: 200
+
+The capture intentionally excludes request headers, tenant identifiers, API
+keys, provider credentials, request bodies, prompts, and tool/model output.
