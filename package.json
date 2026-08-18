@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "compose:up": "docker-compose up -d",
     "compose:migrate": "docker-compose run --rm migrate",
-    "compose:down": "docker-compose down --volumes"
+    "compose:down": "docker-compose down --volumes",
+    "fault:effects": "go run ./cmd/effect-fault"
   },
   "devDependencies": {
     "@types/node": "22.19.19",
