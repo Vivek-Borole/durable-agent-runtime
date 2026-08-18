@@ -1,0 +1,52 @@
+import { randomBytes } from "node:crypto";
+import { afterAll, describe, expect, it } from "vitest";
+import { PostgresDurableStore } from "../src/postgres-store.js";
+
+const databaseUrl = process.env.POSTGRES_URL;
+const integration = databaseUrl ? describe : describe.skip;
+
+const workflow = {
+  name: "postgres-fixture",
+  version: "v1",
+  budgetCents: 100,
+  allowedHosts: ["example.test"],
+  steps: [
+    { kind: "tool", tool: "mock_data_read", sideEffect: false },
+    { kind: "approval", reason: "Approve synthetic fixture" },
+    { kind: "tool", tool: "mock_ticket_write", sideEffect: true }
+  ]
+} as const;
+
+integration("PostgreSQL durable store", () => {
+  const store = new PostgresDurableStore(databaseUrl!);
+  const suffix = randomBytes(6).toString("hex");
+  const tenantSlug = `test-${suffix}`;
+  const apiKey = `postgres-test-${suffix}-local-key`;
+  const secondTenantSlug = `other-${suffix}`;
+  const secondApiKey = `postgres-other-${suffix}-local-key`;
+
+  afterAll(async () => {
+    await store.pool.query("delete from tenants where slug = any($1::text[])", [[tenantSlug, secondTenantSlug]]);
+    await store.close();
+  });
+
+  it("enforces a tenant-scoped idempotency key and RLS reads", async () => {
+    await store.bootstrap({ tenantSlug, apiKey });
+    await store.bootstrap({ tenantSlug: secondTenantSlug, apiKey: secondApiKey });
+    const principal = await store.authenticate(tenantSlug, apiKey);
+    const otherPrincipal = await store.authenticate(secondTenantSlug, secondApiKey);
+    expect(principal).toBeDefined();
+    expect(otherPrincipal).toBeDefined();
+    if (!principal || !otherPrincipal) throw new Error("fixture authentication failed");
+
+    const createdWorkflow = await store.createWorkflow(principal, workflow);
+    const first = await store.createRun(principal, { workflowId: createdWorkflow.id, input: { query: "fixture" } }, "postgres-idempotency-0001");
+    const replay = await store.createRun(principal, { workflowId: createdWorkflow.id, input: { query: "changed-but-replayed" } }, "postgres-idempotency-0001");
+
+    expect(first.replayed).toBe(false);
+    expect(replay.replayed).toBe(true);
+    expect(replay.run.id).toBe(first.run.id);
+    expect(replay.run.input).toEqual({ query: "fixture" });
+    expect(await store.readRun(otherPrincipal, first.run.id)).toBeUndefined();
+  });
+});

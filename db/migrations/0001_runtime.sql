@@ -117,6 +117,13 @@ alter table effect_commits enable row level security;
 alter table workflow_outbox enable row level security;
 alter table approvals enable row level security;
 alter table audit_records enable row level security;
+alter table workflow_definitions force row level security;
+alter table workflow_runs force row level security;
+alter table run_events force row level security;
+alter table effect_commits force row level security;
+alter table workflow_outbox force row level security;
+alter table approvals force row level security;
+alter table audit_records force row level security;
 
 create policy workflow_definitions_tenant on workflow_definitions using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 create policy workflow_runs_tenant on workflow_runs using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
@@ -125,4 +132,3 @@ create policy effect_commits_tenant on effect_commits using (tenant_id = nullif(
 create policy workflow_outbox_tenant on workflow_outbox using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 create policy approvals_tenant on approvals using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 create policy audit_records_tenant on audit_records using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
-

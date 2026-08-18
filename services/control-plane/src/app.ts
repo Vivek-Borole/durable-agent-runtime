@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createRunSchema, runStateSchema, workflowDefinitionSchema } from "@dar/contracts";
-import { InMemoryDurableStore, type Principal, type Role } from "./store.js";
+import { InMemoryDurableStore, type Principal, type Role, type RuntimeStore } from "./store.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -23,7 +23,7 @@ function requireRole(principal: Principal, roles: Role[]): void {
   if (!roles.includes(principal.role)) throw new Error("Insufficient role");
 }
 
-export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-tenant", apiKey: "replace-with-a-long-local-key" })): FastifyInstance {
+export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenantId: "demo-tenant", apiKey: "replace-with-a-long-local-key" })): FastifyInstance {
   const app = Fastify({ logger: false });
 
   app.addHook("preHandler", async (request, reply) => {
@@ -32,7 +32,7 @@ export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-ten
     const apiKey = request.headers["x-api-key"];
     const tenant = typeof tenantId === "string" ? tenantId : undefined;
     const key = typeof apiKey === "string" ? apiKey : undefined;
-    const principal = tenant ? store.authenticate(tenant, key) : undefined;
+    const principal = tenant ? await store.authenticate(tenant, key) : undefined;
     if (!principal) return reply.code(401).send({ error: "unauthenticated" });
     request.principal = principal;
   });
@@ -44,7 +44,7 @@ export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-ten
     requireRole(principal, privilegedRoles);
     const parsed = workflowDefinitionSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_workflow", details: parsed.error.issues });
-    const workflow = store.createWorkflow(principal, parsed.data);
+    const workflow = await store.createWorkflow(principal, parsed.data);
     return reply.code(201).send({ workflow });
   });
 
@@ -59,7 +59,7 @@ export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-ten
     if (!parsed.success) return reply.code(400).send({ error: "invalid_run", details: parsed.error.issues });
     try {
       const { providerCredential: _providerCredential, ...persisted } = parsed.data;
-      const result = store.createRun(principal, persisted, key);
+      const result = await store.createRun(principal, persisted, key);
       return reply.code(result.replayed ? 200 : 201).send({ run: result.run, replayed: result.replayed });
     } catch (error) {
       return reply.code(404).send({ error: error instanceof Error ? error.message : "run_creation_failed" });
@@ -68,7 +68,7 @@ export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-ten
 
   app.get("/v1/runs/:runId", async (request, reply) => {
     const principal = requirePrincipal(request);
-    const run = store.readRun(principal, (request.params as { runId: string }).runId);
+    const run = await store.readRun(principal, (request.params as { runId: string }).runId);
     return run ? reply.send({ run }) : reply.code(404).send({ error: "run_not_found" });
   });
 
@@ -76,10 +76,10 @@ export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-ten
     const principal = requirePrincipal(request);
     requireRole(principal, privilegedRoles);
     const runId = (request.params as { runId: string }).runId;
-    const run = store.readRun(principal, runId);
+    const run = await store.readRun(principal, runId);
     if (!run) return reply.code(404).send({ error: "run_not_found" });
     if (run.state !== "awaiting_approval") return reply.code(409).send({ error: "run_not_awaiting_approval" });
-    const updated = store.transition(principal, runId, "queued", runEvent("approved", "Approval recorded; run re-queued"));
+    const updated = await store.transition(principal, runId, "queued", runEvent("approved", "Approval recorded; run re-queued"));
     return reply.send({ run: updated });
   });
 
@@ -87,22 +87,21 @@ export function createApp(store = new InMemoryDurableStore({ tenantId: "demo-ten
     const principal = requirePrincipal(request);
     requireRole(principal, privilegedRoles);
     const runId = (request.params as { runId: string }).runId;
-    const run = store.readRun(principal, runId);
+    const run = await store.readRun(principal, runId);
     if (!run) return reply.code(404).send({ error: "run_not_found" });
     const parsed = runStateSchema.safeParse(run.state);
     if (!parsed.success || ["succeeded", "failed", "cancelled", "uncertain"].includes(parsed.data)) {
       return reply.code(409).send({ error: "terminal_run" });
     }
-    const updated = store.transition(principal, runId, "cancelled", runEvent("cancelled", "Cancellation requested"));
+    const updated = await store.transition(principal, runId, "cancelled", runEvent("cancelled", "Cancellation requested"));
     return reply.send({ run: updated });
   });
 
   app.get("/v1/audit", async (request, reply) => {
     const principal = requirePrincipal(request);
     requireRole(principal, ["owner"]);
-    return reply.send({ records: store.listAudit(principal) });
+    return reply.send({ records: await store.listAudit(principal) });
   });
 
   return app;
 }
-

@@ -12,6 +12,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+  migrate:
+    image: postgres:17-alpine
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: dar
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - 'for file in /migrations/*.sql; do psql -h postgres -U dar -d dar -v ON_ERROR_STOP=1 -f "$${file}"; done'
   nats:
     image: nats:2.11-alpine
     command: ["-js", "-sd", "/data"]
@@ -25,4 +39,3 @@ services:
     volumes:
       - ./infra/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports: ["4317:4317", "4318:4318"]
-

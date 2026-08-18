@@ -42,6 +42,15 @@ export interface AuditRecord {
   resourceId: string;
 }
 
+export interface RuntimeStore {
+  authenticate(tenantSlug: string, apiKey: string | undefined): Principal | undefined | Promise<Principal | undefined>;
+  createWorkflow(principal: Principal, definition: WorkflowDefinition): StoredWorkflow | Promise<StoredWorkflow>;
+  createRun(principal: Principal, request: Omit<CreateRun, "providerCredential">, idempotencyKey: string): { run: StoredRun; replayed: boolean } | Promise<{ run: StoredRun; replayed: boolean }>;
+  readRun(principal: Principal, runId: string): StoredRun | undefined | Promise<StoredRun | undefined>;
+  transition(principal: Principal, runId: string, state: RunState, event: RunEvent): StoredRun | Promise<StoredRun>;
+  listAudit(principal: Principal): AuditRecord[] | Promise<AuditRecord[]>;
+}
+
 export function hashApiKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
@@ -56,7 +65,7 @@ function constantTimeEqual(left: string, right: string): boolean {
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
-export class InMemoryDurableStore {
+export class InMemoryDurableStore implements RuntimeStore {
   readonly workflows = new Map<string, StoredWorkflow>();
   readonly runs = new Map<string, StoredRun>();
   readonly audits: AuditRecord[] = [];
@@ -138,4 +147,3 @@ export class InMemoryDurableStore {
     return this.audits.filter((item) => item.tenantId === principal.tenantId);
   }
 }
-
