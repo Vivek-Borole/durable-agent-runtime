@@ -81,3 +81,8 @@ masked, no provider credential was used, and no external system was contacted.
 
 `screenshots/grafana-runtime-overview.png` is the local provisioned Grafana
 dashboard. Its HTTP panels are populated only by synthetic local requests.
+
+`synthetic-demo.gif` is an animated local walkthrough of the captured console
+states: approval pause, then resumed successful completion. Regenerate it with
+`go run ./cmd/demo-gif`. It contains no real credentials, tenant data, provider
+response, or external side effect.
