@@ -11,8 +11,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "format:check": "prettier --check .",
-    "compose:up": "docker compose up --build",
-    "compose:down": "docker compose down --volumes"
+    "compose:up": "docker-compose up -d",
+    "compose:migrate": "docker-compose run --rm migrate",
+    "compose:down": "docker-compose down --volumes"
   },
   "devDependencies": {
     "@types/node": "22.19.19",
