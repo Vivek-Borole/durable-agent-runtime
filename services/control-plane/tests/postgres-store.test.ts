@@ -58,11 +58,12 @@ integration("PostgreSQL durable store", () => {
     if (!principal) throw new Error("fixture authentication failed");
     const outboxWorkflow = await store.createWorkflow(principal, { ...workflow, name: "outbox-fixture" });
     await store.createRun(principal, { workflowId: outboxWorkflow.id, input: { query: "outbox fixture" } }, "postgres-outbox-key-0001");
+    await store.pool.query("update workflow_outbox set subject = 'dar.test.run.queued' where tenant_id = $1 and published_at is null", [principal.tenantId]);
 
     const connection = await connect({ servers: natsUrl!, name: "dar-outbox-test" });
     const manager = await connection.jetstreamManager();
     await manager.streams.delete("DAR_TEST").catch(() => undefined);
-    await manager.streams.add({ name: "DAR_TEST", subjects: ["dar.run.queued"], storage: "memory" });
+    await manager.streams.add({ name: "DAR_TEST", subjects: ["dar.test.run.queued"], storage: "memory" });
     try {
       const publisher = new OutboxPublisher(store, connection.jetstream());
       // The preceding idempotency fixture intentionally created one queued
@@ -87,5 +88,21 @@ integration("PostgreSQL durable store", () => {
 
     await store.pool.query("update workflow_runs set lease_expires_at = now() - interval '1 second' where id = $1", [created.run.id]);
     await expect(store.claimRunLease(created.run.id, "worker-b", 30)).resolves.toMatchObject({ leaseOwner: "worker-b" });
+  });
+
+  it("requeues an approved run at the step after its approval and emits a new outbox item", async () => {
+    const principal = await store.authenticate(tenantSlug, apiKey);
+    if (!principal) throw new Error("fixture authentication failed");
+    const approvalWorkflow = await store.createWorkflow(principal, { ...workflow, name: "approval-fixture" });
+    const created = await store.createRun(principal, { workflowId: approvalWorkflow.id, input: {} }, "postgres-approval-key-0001");
+    const now = new Date().toISOString();
+
+    await store.transition(principal, created.run.id, "leased", { at: now, type: "leased", detail: "test lease" });
+    await store.transition(principal, created.run.id, "running", { at: now, type: "started", detail: "test start" });
+    await store.transition(principal, created.run.id, "awaiting_approval", { at: now, type: "approval_requested", detail: "test approval" });
+    await store.transition(principal, created.run.id, "queued", { at: now, type: "approved", detail: "test approved" });
+
+    await expect(store.pool.query<{ current_step: number }>("select current_step from workflow_runs where id = $1", [created.run.id])).resolves.toMatchObject({ rows: [{ current_step: 1 }] });
+    await expect(store.pool.query<{ count: string }>("select count(*) from workflow_outbox where run_id = $1", [created.run.id])).resolves.toMatchObject({ rows: [{ count: "2" }] });
   });
 });

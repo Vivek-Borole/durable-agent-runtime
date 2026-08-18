@@ -178,8 +178,16 @@ export class PostgresDurableStore implements RuntimeStore {
       const current = locked.rows[0];
       if (!current) throw new Error("Run not found");
       assertTransition(runStateSchema.parse(current.state), state);
-      await client.query("update workflow_runs set state = $1::dar_run_state, updated_at = now() where id = $2", [state, runId]);
+      await client.query(
+        state === "queued" && event.type === "approved"
+          ? "update workflow_runs set state = $1::dar_run_state, current_step = current_step + 1, updated_at = now() where id = $2"
+          : "update workflow_runs set state = $1::dar_run_state, updated_at = now() where id = $2",
+        [state, runId]
+      );
       await client.query("insert into run_events (tenant_id, run_id, event_type, detail, trace_id) values ($1, $2, $3, $4, $5)", [principal.tenantId, runId, event.type, event.detail, event.traceId ?? null]);
+      if (state === "queued" && event.type === "approved") {
+        await client.query("insert into workflow_outbox (tenant_id, run_id, subject, payload) values ($1, $2, 'dar.run.queued', $3::jsonb)", [principal.tenantId, runId, JSON.stringify({ runId })]);
+      }
       await this.audit(client, principal, `run.${event.type}`, runId);
       const updated = { ...current, state };
       return this.readRunInTransaction(client, principal.tenantId, updated);
@@ -238,7 +246,7 @@ export class PostgresDurableStore implements RuntimeStore {
       const run = await client.query<RunRow & { current_step: number; lease_expires_at: Date | null }>(
         `select id, tenant_id, workflow_id, state, input, budget_cents, idempotency_key, created_at, current_step, lease_expires_at
          from workflow_runs
-         where id = $1 and (state = 'queued' or (state = 'leased' and lease_expires_at < now()))
+         where id = $1 and (state = 'queued' or (state in ('leased', 'running') and lease_expires_at < now()))
          for update skip locked`,
         [runId]
       );
