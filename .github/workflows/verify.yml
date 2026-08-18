@@ -39,6 +39,7 @@ jobs:
       - run: pnpm build
       - run: go test -race ./...
       - run: pnpm audit --audit-level=high
+      - run: pnpm evidence:check
   compose-integration:
     runs-on: ubuntu-latest
     steps:

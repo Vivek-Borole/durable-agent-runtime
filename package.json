@@ -15,7 +15,8 @@
     "compose:migrate": "docker-compose run --rm migrate",
     "compose:down": "docker-compose down --volumes",
     "fault:effects": "go run ./cmd/effect-fault",
-    "benchmark:scheduling": "go build -o /tmp/durable-agent-runtime-worker ./services/worker && go run ./cmd/scheduling-benchmark"
+    "benchmark:scheduling": "go build -o /tmp/durable-agent-runtime-worker ./services/worker && go run ./cmd/scheduling-benchmark",
+    "evidence:check": "node scripts/validate-evidence.mjs"
   },
   "devDependencies": {
     "@types/node": "22.19.19",
