@@ -1,0 +1,32 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:ts
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: go test ./...
+      - run: pnpm audit --audit-level=high
+

@@ -1,0 +1,28 @@
+name: durable-agent-runtime
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: dar
+      POSTGRES_PASSWORD: dar
+      POSTGRES_DB: dar
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dar -d dar"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "-sd", "/data"]
+    ports: ["4222:4222", "8222:8222"]
+  redis:
+    image: redis:8-alpine
+    ports: ["6379:6379"]
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.126.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./infra/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+

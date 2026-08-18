@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: Durable Agent Runtime API
+  version: 1.0.0
+paths:
+  /v1/workflows:
+    post:
+      summary: Register an immutable workflow definition
+      responses:
+        '201': { description: Workflow created }
+  /v1/runs:
+    post:
+      summary: Create or replay a tenant-scoped idempotent run
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 128 }
+      responses:
+        '201': { description: Run created }
+        '200': { description: Existing idempotent run returned }
+  /v1/runs/{runId}:
+    get:
+      summary: Read a run and its redacted event timeline
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Run found }
+  /v1/runs/{runId}/approve:
+    post:
+      summary: Approve the currently awaiting approval step
+      responses:
+        '200': { description: Run re-queued }
+  /v1/runs/{runId}/cancel:
+    post:
+      summary: Cancel an unfinished run
+      responses:
+        '200': { description: Run cancelled }
+
