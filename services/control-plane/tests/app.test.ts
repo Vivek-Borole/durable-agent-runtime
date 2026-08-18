@@ -16,6 +16,17 @@ const workflow = {
 };
 
 describe("control plane", () => {
+  it("exposes only route/status metrics without requiring tenant credentials", async () => {
+    const store = new InMemoryDurableStore({ tenantId: "tenant-a", apiKey: "tenant-a-local-secret-key" });
+    const app = createApp(store);
+    await app.inject({ method: "GET", url: "/healthz" });
+    const metrics = await app.inject({ method: "GET", url: "/metrics" });
+    expect(metrics.statusCode).toBe(200);
+    expect(metrics.body).toContain("dar_http_requests_total");
+    expect(metrics.body).not.toContain("tenant-a");
+    await app.close();
+  });
+
   it("creates an idempotent tenant-scoped run without persisting provider credentials", async () => {
     const store = new InMemoryDurableStore({ tenantId: "tenant-a", apiKey: "tenant-a-local-secret-key" });
     const app = createApp(store);
@@ -40,4 +51,3 @@ describe("control plane", () => {
     await app.close();
   });
 });
-

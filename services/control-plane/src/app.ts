@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createRunSchema, runStateSchema, workflowDefinitionSchema } from "@dar/contracts";
 import { InMemoryDurableStore, type Principal, type Role, type RuntimeStore } from "./store.js";
 import { CredentialBroker } from "./credential-broker.js";
+import { httpDuration, httpRequests, metrics } from "./metrics.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -36,7 +37,7 @@ export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenan
   });
 
   app.addHook("preHandler", async (request, reply) => {
-    if (request.url === "/healthz" || request.url.startsWith("/internal/")) return;
+    if (request.url === "/healthz" || request.url === "/metrics" || request.url.startsWith("/internal/")) return;
     const tenantId = request.headers["x-tenant-id"];
     const apiKey = request.headers["x-api-key"];
     const tenant = typeof tenantId === "string" ? tenantId : undefined;
@@ -46,7 +47,15 @@ export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenan
     request.principal = principal;
   });
 
+  app.addHook("onResponse", async (request, reply) => {
+    const route = request.routeOptions.url ?? "unmatched";
+    const status = String(reply.statusCode);
+    httpRequests.inc({ route, status });
+    httpDuration.observe({ route, status }, reply.elapsedTime / 1_000);
+  });
+
   app.get("/healthz", async () => ({ status: "ok" }));
+  app.get("/metrics", async (_request, reply) => reply.type(metrics.contentType).send(await metrics.metrics()));
 
   app.post("/v1/workflows", async (request, reply) => {
     const principal = requirePrincipal(request);

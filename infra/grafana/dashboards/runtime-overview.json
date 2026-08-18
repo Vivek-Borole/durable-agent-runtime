@@ -1,0 +1,11 @@
+{
+  "title": "Durable Agent Runtime Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type":"timeseries","title":"HTTP request rate","targets":[{"expr":"sum(rate(dar_http_requests_total[1m])) by (route, status)"}],"gridPos":{"h":8,"w":12,"x":0,"y":0}},
+    {"type":"timeseries","title":"p95 HTTP duration","targets":[{"expr":"histogram_quantile(0.95, sum(rate(dar_http_request_duration_seconds_bucket[5m])) by (le, route))"}],"gridPos":{"h":8,"w":12,"x":12,"y":0}},
+    {"type":"stat","title":"Process resident memory","targets":[{"expr":"process_resident_memory_bytes"}],"gridPos":{"h":8,"w":8,"x":0,"y":8}}
+  ]
+}

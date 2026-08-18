@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: Durable Agent Runtime
+    folder: Durable Agent Runtime
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
