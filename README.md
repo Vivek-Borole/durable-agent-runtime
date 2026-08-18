@@ -24,16 +24,16 @@ steps; it records idempotent mock-ticket effects at a PostgreSQL commit boundary
 pnpm install
 pnpm compose:up
 pnpm compose:migrate
-POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar NATS_URL=nats://127.0.0.1:4222 pnpm test
+POSTGRES_URL=postgres://dar_control:dar-control-local-only@127.0.0.1:5432/dar DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar DAR_TEST_ADMIN_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar NATS_URL=nats://127.0.0.1:4222 pnpm test
 pnpm typecheck
-POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar DAR_BOOTSTRAP_TENANT=demo-tenant DAR_BOOTSTRAP_API_KEY=replace-with-a-long-local-key pnpm dev
+POSTGRES_URL=postgres://dar_control:dar-control-local-only@127.0.0.1:5432/dar DAR_BOOTSTRAP_TENANT=demo-tenant DAR_BOOTSTRAP_API_KEY=replace-with-a-long-local-key pnpm dev
 ```
 
 To publish committed runs locally, use a separate terminal with the system
 database credential (never a tenant API key):
 
 ```bash
-DAR_WORKER_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar NATS_URL=nats://127.0.0.1:4222 pnpm --filter @dar/control-plane outbox
+DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar NATS_URL=nats://127.0.0.1:4222 pnpm --filter @dar/control-plane outbox
 ```
 
 ## Safety model

@@ -12,17 +12,17 @@ pnpm compose:migrate
 In separate terminals, start the control plane, outbox publisher, and worker:
 
 ```bash
-POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+POSTGRES_URL=postgres://dar_control:dar-control-local-only@127.0.0.1:5432/dar \
 DAR_BOOTSTRAP_TENANT=demo-tenant \
 DAR_BOOTSTRAP_API_KEY=replace-with-a-long-local-key \
 DAR_INTERNAL_TOKEN=local-development-token \
 pnpm dev
 
-DAR_WORKER_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
 NATS_URL=nats://127.0.0.1:4222 \
 pnpm --filter @dar/control-plane outbox
 
-DAR_WORKER_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
 NATS_URL=nats://127.0.0.1:4222 \
 DAR_CONTROL_PLANE_INTERNAL_URL=http://127.0.0.1:3001 \
 DAR_INTERNAL_TOKEN=local-development-token \

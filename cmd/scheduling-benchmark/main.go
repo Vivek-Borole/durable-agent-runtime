@@ -50,15 +50,15 @@ func main() {
 	workers := flag.Int("workers", 1, "real worker processes; each has bounded parallel delivery")
 	output := flag.String("output", "docs/evidence/scheduling-benchmark-report.json", "JSON report path")
 	flag.Parse()
-	dbURL, natsURL := os.Getenv("DAR_WORKER_POSTGRES_URL"), os.Getenv("NATS_URL")
-	if dbURL == "" {
-		panic("DAR_WORKER_POSTGRES_URL is required")
+	adminDBURL, workerDBURL, natsURL := os.Getenv("DAR_BENCHMARK_POSTGRES_URL"), os.Getenv("DAR_WORKER_POSTGRES_URL"), os.Getenv("NATS_URL")
+	if adminDBURL == "" || workerDBURL == "" {
+		panic("DAR_BENCHMARK_POSTGRES_URL and DAR_WORKER_POSTGRES_URL are required")
 	}
 	if natsURL == "" {
 		natsURL = "nats://127.0.0.1:4222"
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dbURL)
+	pool, err := pgxpool.New(ctx, adminDBURL)
 	if err != nil {
 		panic(err)
 	}
@@ -89,7 +89,7 @@ func main() {
 	children := make([]*exec.Cmd, 0, *workers)
 	for range *workers {
 		child := exec.Command(binary)
-		child.Env = append(os.Environ(), "DAR_WORKER_POSTGRES_URL="+dbURL, "NATS_URL="+natsURL, "DAR_STREAM="+streamName, "DAR_QUEUE_SUBJECT="+queueSubject, "DAR_CONSUMER="+consumerName)
+		child.Env = append(os.Environ(), "DAR_WORKER_POSTGRES_URL="+workerDBURL, "NATS_URL="+natsURL, "DAR_STREAM="+streamName, "DAR_QUEUE_SUBJECT="+queueSubject, "DAR_CONSUMER="+consumerName)
 		child.Stdout, child.Stderr = os.Stderr, os.Stderr
 		if err = child.Start(); err != nil {
 			panic(err)

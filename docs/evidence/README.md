@@ -8,7 +8,8 @@ Reproduce the scheduling report after starting Compose and applying migrations:
 
 ```bash
 go build -o /tmp/durable-agent-runtime-worker ./services/worker
-DAR_WORKER_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_BENCHMARK_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
 DAR_WORKER_CONCURRENCY=32 \
 go run ./cmd/scheduling-benchmark \
   -active=1000 -warmup=1000 -backlog=10000 -workers=4 \

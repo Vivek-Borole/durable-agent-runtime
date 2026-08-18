@@ -75,6 +75,9 @@ export class PostgresDurableStore implements RuntimeStore {
         [seed.tenantSlug]
       );
       const tenantId = tenant.rows[0]!.id;
+      // The control-plane role remains subject to RLS even while provisioning
+      // its own tenant-scoped runtime limit record.
+      await client.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
       await client.query("insert into tenant_runtime_limits (tenant_id) values ($1) on conflict (tenant_id) do nothing", [tenantId]);
       const principal = await client.query<{ id: string }>(
         `insert into principals (tenant_id, subject, role) values ($1, $2, $3::dar_role)
@@ -166,7 +169,7 @@ export class PostgresDurableStore implements RuntimeStore {
       }
       const row = inserted.rows[0];
       await client.query("insert into run_events (tenant_id, run_id, event_type, detail) values ($1, $2, 'created', 'Run queued')", [principal.tenantId, row.id]);
-      await client.query("insert into workflow_outbox (tenant_id, run_id, subject, payload) values ($1, $2, 'dar.run.queued', $3::jsonb)", [principal.tenantId, row.id, JSON.stringify({ runId: row.id })]);
+      await client.query("select queue_run_outbox($1::uuid, $2::uuid)", [principal.tenantId, row.id]);
       await this.audit(client, principal, "run.created", row.id);
       return { run: await this.readRunInTransaction(client, principal.tenantId, row), replayed: false };
     });
@@ -201,7 +204,7 @@ export class PostgresDurableStore implements RuntimeStore {
       );
       await client.query("insert into run_events (tenant_id, run_id, event_type, detail, trace_id) values ($1, $2, $3, $4, $5)", [principal.tenantId, runId, event.type, event.detail, event.traceId ?? null]);
       if (state === "queued" && event.type === "approved") {
-        await client.query("insert into workflow_outbox (tenant_id, run_id, subject, payload) values ($1, $2, 'dar.run.queued', $3::jsonb)", [principal.tenantId, runId, JSON.stringify({ runId })]);
+        await client.query("select queue_run_outbox($1::uuid, $2::uuid)", [principal.tenantId, runId]);
       }
       await this.audit(client, principal, `run.${event.type}`, runId);
       const updated = { ...current, state };
