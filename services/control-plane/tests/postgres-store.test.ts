@@ -94,12 +94,16 @@ integration("PostgreSQL durable store", () => {
     const leaseWorkflow = await store.createWorkflow(principal, { ...workflow, name: "lease-fixture" });
     const created = await store.createRun(principal, { workflowId: leaseWorkflow.id, input: { query: "lease fixture" } }, "postgres-lease-key-0001");
 
-    const first = await workerStore.claimRunLease(created.run.id, "worker-a", 30);
-    expect(first).toMatchObject({ leaseOwner: "worker-a", currentStep: 0, run: { id: created.run.id, state: "leased" } });
-    await expect(workerStore.claimRunLease(created.run.id, "worker-b", 30)).resolves.toBeUndefined();
+    const concurrent = await Promise.all([
+      workerStore.claimRunLease(created.run.id, "worker-a", 30),
+      workerStore.claimRunLease(created.run.id, "worker-b", 30)
+    ]);
+    expect(concurrent.filter(Boolean)).toHaveLength(1);
+    const first = concurrent.find(Boolean);
+    expect(first).toMatchObject({ currentStep: 0, run: { id: created.run.id, state: "leased" } });
 
     await systemPool.query("update workflow_runs set lease_expires_at = now() - interval '1 second' where id = $1", [created.run.id]);
-    await expect(workerStore.claimRunLease(created.run.id, "worker-b", 30)).resolves.toMatchObject({ leaseOwner: "worker-b" });
+    await expect(workerStore.claimRunLease(created.run.id, "worker-recovery", 30)).resolves.toMatchObject({ leaseOwner: "worker-recovery" });
   });
 
   it("requeues an approved run at the step after its approval and emits a new outbox item", async () => {
