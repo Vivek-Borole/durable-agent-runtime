@@ -12,9 +12,7 @@ Completed synthetic evidence:
 
 Before the repository becomes public, still attach:
 
-- raw benchmark/fault logs and a report-schema check;
 - a short video made only with synthetic data;
-- a clean-machine Compose smoke-test log;
 - GitHub Actions verification, GitHub Pages publication, release assets, tag,
   and the explicit private-to-public repository change.
 

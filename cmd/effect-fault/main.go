@@ -44,12 +44,17 @@ func main() {
 	workers := flag.Int("workers", 100, "bounded database worker count")
 	output := flag.String("output", "docs/evidence/effect-fault-report.json", "JSON report path")
 	flag.Parse()
-	url := os.Getenv("DAR_WORKER_POSTGRES_URL")
-	if url == "" {
-		panic("DAR_WORKER_POSTGRES_URL is required")
+	adminURL, workerURL := os.Getenv("DAR_BENCHMARK_POSTGRES_URL"), os.Getenv("DAR_WORKER_POSTGRES_URL")
+	if adminURL == "" || workerURL == "" {
+		panic("DAR_BENCHMARK_POSTGRES_URL and DAR_WORKER_POSTGRES_URL are required")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	adminPool, err := pgxpool.New(ctx, adminURL)
+	if err != nil {
+		panic(err)
+	}
+	defer adminPool.Close()
+	pool, err := pgxpool.New(ctx, workerURL)
 	if err != nil {
 		panic(err)
 	}
@@ -58,17 +63,17 @@ func main() {
 	stamp := time.Now().UTC().UnixNano()
 	tenantSlug := fmt.Sprintf("fault-%d", stamp)
 	var tenantID, workflowID, runID string
-	err = pool.QueryRow(ctx, "insert into tenants (slug) values ($1) returning id", tenantSlug).Scan(&tenantID)
+	err = adminPool.QueryRow(ctx, "insert into tenants (slug) values ($1) returning id", tenantSlug).Scan(&tenantID)
 	if err != nil {
 		panic(err)
 	}
-	defer pool.Exec(ctx, "delete from tenants where id = $1", tenantID)
+	defer adminPool.Exec(ctx, "delete from tenants where id = $1", tenantID)
 	definition := `{"name":"fault-fixture","version":"v1","budgetCents":1,"allowedHosts":[],"steps":[{"kind":"tool","tool":"mock_ticket_write","sideEffect":false}]}`
-	err = pool.QueryRow(ctx, "insert into workflow_definitions (tenant_id,name,version,definition,budget_cents) values ($1,'fault-fixture','v1',$2::jsonb,1) returning id", tenantID, definition).Scan(&workflowID)
+	err = adminPool.QueryRow(ctx, "insert into workflow_definitions (tenant_id,name,version,definition,budget_cents) values ($1,'fault-fixture','v1',$2::jsonb,1) returning id", tenantID, definition).Scan(&workflowID)
 	if err != nil {
 		panic(err)
 	}
-	err = pool.QueryRow(ctx, "insert into workflow_runs (tenant_id,workflow_id,idempotency_key,input,budget_cents) values ($1,$2,'fault-idempotency-0001','{}'::jsonb,1) returning id", tenantID, workflowID).Scan(&runID)
+	err = adminPool.QueryRow(ctx, "insert into workflow_runs (tenant_id,workflow_id,idempotency_key,input,budget_cents) values ($1,$2,'fault-idempotency-0001','{}'::jsonb,1) returning id", tenantID, workflowID).Scan(&runID)
 	if err != nil {
 		panic(err)
 	}
@@ -100,7 +105,7 @@ func main() {
 	close(jobs)
 	group.Wait()
 	var persisted int64
-	if err = pool.QueryRow(ctx, "select count(*) from effect_commits where tenant_id = $1 and run_id = $2", tenantID, runID).Scan(&persisted); err != nil {
+	if err = adminPool.QueryRow(ctx, "select count(*) from effect_commits where tenant_id = $1 and run_id = $2", tenantID, runID).Scan(&persisted); err != nil {
 		panic(err)
 	}
 

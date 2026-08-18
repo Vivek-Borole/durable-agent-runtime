@@ -1,0 +1,21 @@
+Clean Compose smoke
+2026-08-18T22:42:50Z
+NAME                                     STATE
+durable-agent-runtime-grafana-1          running
+durable-agent-runtime-nats-1             running
+durable-agent-runtime-otel-collector-1   running
+durable-agent-runtime-postgres-1         running
+durable-agent-runtime-prometheus-1       running
+durable-agent-runtime-redis-1            running
+
+Migrations applied:
+ Container durable-agent-runtime-postgres-1 Running 
+ Container durable-agent-runtime-postgres-1 Waiting 
+ Container durable-agent-runtime-postgres-1 Healthy 
+ Container durable-agent-runtime-migrate-run-e1794999cfc3 Creating 
+ Container durable-agent-runtime-migrate-run-e1794999cfc3 Created 
+NOTICE:  relation "schema_migrations" already exists, skipping
+CREATE TABLE
+
+Evidence validation:
+release evidence schema is valid

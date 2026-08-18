@@ -22,10 +22,16 @@ with 1,000 mock reads, then measures queued-to-started latency for 10,000 mock
 read runs. It passes only when every measured run succeeds and p95 is at most
 500 ms.
 
+The committed `scheduling-benchmark-run.log` and `effect-fault-run.log` are
+the raw stdout from the latest full synthetic runs. `clean-compose-smoke.log`
+records the disposable-stack startup, migration replay, service health, and
+evidence-schema verification.
+
 Reproduce the idempotency fault report:
 
 ```bash
-DAR_WORKER_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_BENCHMARK_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
 go run ./cmd/effect-fault -attempts=100000 -workers=100 \
   -output=docs/evidence/effect-fault-report.json
 ```
