@@ -52,9 +52,9 @@ integration, real JetStream outbox delivery, and a 1,000-concurrent-delivery
 effect-ledger race test. The recorded synthetic evidence includes a
 [100,000-attempt effect fault run](docs/evidence/effect-fault-report.json) and
 a [1,000-resident / 10,000-backlog scheduling benchmark](docs/evidence/scheduling-benchmark-report.json).
-Worker-recovery tests, full OpenTelemetry traces, a dedicated worker database
-role, screenshots/demo video, and the remaining public-release evidence are
-still required before a public release.
+Worker-recovery tests, full OpenTelemetry traces, screenshots/demo video, and
+the remaining public-release evidence are still required before a public
+release.
 
 Read [the architecture](docs/architecture.md), [threat model](docs/threat-model.md),
 [API contract](contracts/openapi.yaml), [Compose quick start](docs/compose-quickstart.md),
