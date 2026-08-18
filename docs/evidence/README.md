@@ -33,3 +33,24 @@ go run ./cmd/effect-fault -attempts=100000 -workers=100 \
 That workload concurrently attempts one stable mock-ticket effect key 100,000
 times. The PostgreSQL unique constraint is the durable commit boundary; passing
 requires exactly one committed effect and no database-operation errors.
+
+Reproduce the lease-recovery artifact:
+
+```bash
+DAR_BENCHMARK_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
+go run ./cmd/lease-recovery -output=docs/evidence/lease-recovery-report.json
+pnpm evidence:check
+```
+
+This is a deterministic database-level simulation of a worker disappearing
+after acquiring a lease, followed by a second worker recovering the expired
+lease and committing exactly one mock effect. It is intentionally labelled as
+a simulation; the Compose integration suite remains the place for a real
+process-termination test.
+
+## Screenshots
+
+`screenshots/console-awaiting-approval.png` and
+`screenshots/console-succeeded.png` are captured from the local console using
+only the `synthetic-demo` tenant and a mock ticket tool. The API key field is
+masked, no provider credential was used, and no external system was contacted.

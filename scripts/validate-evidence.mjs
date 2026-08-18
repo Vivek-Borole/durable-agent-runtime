@@ -28,4 +28,8 @@ assert(benchmark.p95Millis <= 500, "benchmark p95 exceeds 500 ms");
 assert(Array.isArray(benchmark.failureConditions) && benchmark.failureConditions.length > 0, "benchmark needs failure conditions");
 assertMachine(benchmark.machine, "benchmark report");
 
+const recovery = await readJson("docs/evidence/lease-recovery-report.json");
+assert(recovery.passed === true, "lease recovery evidence did not pass");
+assert(recovery.attempts === 2 && recovery.committedEffects === 1 && recovery.finalState === "succeeded", "lease recovery outcome is incomplete");
+
 console.log("release evidence schema is valid");

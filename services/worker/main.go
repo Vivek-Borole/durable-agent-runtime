@@ -146,7 +146,9 @@ func main() {
 						_ = message.Ack()
 						continue
 					}
-					slog.Warn("run delivery not acknowledged", "error", err)
+				// Error values can originate in an upstream service. Keep telemetry
+				// and logs to a fixed operational class, never tenant content.
+				slog.Warn("run delivery not acknowledged", "error_class", "run_delivery_failed")
 					_ = message.Nak()
 					continue
 				}
@@ -159,7 +161,7 @@ func main() {
 		message, nextErr := iterator.Next(jetstream.NextContext(ctx))
 		if nextErr != nil {
 			if ctx.Err() == nil {
-				slog.Warn("JetStream next message failed", "error", nextErr)
+				slog.Warn("JetStream next message failed", "error_class", "jetstream_delivery_failed")
 			}
 			continue
 		}

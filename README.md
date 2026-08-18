@@ -51,10 +51,12 @@ The current tests include in-memory API checks, PostgreSQL RLS/idempotency
 integration, real JetStream outbox delivery, and a 1,000-concurrent-delivery
 effect-ledger race test. The recorded synthetic evidence includes a
 [100,000-attempt effect fault run](docs/evidence/effect-fault-report.json) and
-a [1,000-resident / 10,000-backlog scheduling benchmark](docs/evidence/scheduling-benchmark-report.json).
-Worker-recovery tests, full OpenTelemetry traces, screenshots/demo video, and
-the remaining public-release evidence are still required before a public
-release.
+a [1,000-resident / 10,000-backlog scheduling benchmark](docs/evidence/scheduling-benchmark-report.json),
+an [expired-lease recovery simulation](docs/evidence/lease-recovery-report.json),
+and [synthetic console screenshots](docs/evidence/screenshots/).
+Real process-termination recovery, exported OpenTelemetry traces, a Grafana
+dashboard screenshot, a demo video, clean-machine smoke evidence, and remote
+CI/release evidence are still required before a public release.
 
 Read [the architecture](docs/architecture.md), [threat model](docs/threat-model.md),
 [API contract](contracts/openapi.yaml), [Compose quick start](docs/compose-quickstart.md),

@@ -1,0 +1,10 @@
+{
+  "scenario": "simulated worker loss followed by expired-lease handoff",
+  "firstLeaseOwner": "worker-a",
+  "recoveredLeaseOwner": "worker-b",
+  "attempts": 2,
+  "committedEffects": 1,
+  "finalState": "succeeded",
+  "passed": true,
+  "completedAt": "2026-08-18T22:25:54.633738Z"
+}

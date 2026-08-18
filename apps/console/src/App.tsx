@@ -31,7 +31,12 @@ export function App() {
   const headers = useMemo(() => ({ "content-type": "application/json", "x-tenant-id": tenantId, "x-api-key": apiKey }), [tenantId, apiKey]);
 
   async function request(path: string, init: RequestInit = {}) {
-    const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { ...headers, ...(init.headers ?? {}) } });
+    const requestHeaders = { ...headers, ...(init.headers ?? {}) } as Record<string, string>;
+    // Fastify rejects an empty body declared as JSON. Approval and cancellation
+    // intentionally have no request body, so only advertise JSON when one is
+    // actually supplied.
+    if (!init.body) delete requestHeaders["content-type"];
+    const response = await fetch(`${apiUrl}${path}`, { ...init, headers: requestHeaders });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
     return body;
