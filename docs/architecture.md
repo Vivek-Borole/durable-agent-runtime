@@ -15,6 +15,12 @@ effect, approval, outbox, and audit tables. The control plane must set
 `app.tenant_id` inside every transaction; RLS is a second boundary, not a
 replacement for explicit query predicates.
 
+The outbox publisher is a system component and uses a separate worker database
+credential. It is never exposed through tenant-facing HTTP APIs. It locks a
+bounded batch, publishes each message to JetStream, then marks that batch
+published. A failure between those two operations causes safe redelivery; the
+message is not treated as exactly-once.
+
 ## Correctness boundary
 
 The worker may execute a task more than once. Every tool invocation receives a

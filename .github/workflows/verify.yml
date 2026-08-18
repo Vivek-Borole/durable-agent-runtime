@@ -27,6 +27,5 @@ jobs:
       - run: pnpm test:ts
       - run: pnpm typecheck
       - run: pnpm build
-      - run: go test ./...
+      - run: go test -race ./...
       - run: pnpm audit --audit-level=high
-

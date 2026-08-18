@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@dar/contracts": "workspace:*",
-    "fastify": "5.6.1",
+    "fastify": "5.8.5",
     "nats": "2.29.3",
     "pg": "8.16.3",
     "zod": "4.1.12"
@@ -19,6 +19,6 @@
   "devDependencies": {
     "@types/pg": "8.15.5",
     "tsx": "4.23.12",
-    "vitest": "4.0.7"
+    "vitest": "4.1.0"
   }
 }
