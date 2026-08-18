@@ -23,6 +23,14 @@ export type PendingOutboxMessage = {
   payload: Record<string, unknown>;
 };
 
+export type WorkerLease = {
+  run: StoredRun;
+  definition: WorkflowDefinition;
+  currentStep: number;
+  leaseOwner: string;
+  leaseExpiresAt: string;
+};
+
 function equalHash(left: string, right: string): boolean {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
@@ -223,8 +231,54 @@ export class PostgresDurableStore implements RuntimeStore {
     await this.pool.query("update workflow_outbox set published_at = now() where id = any($1::bigint[])", [ids]);
   }
 
+  async claimRunLease(runId: string, workerId: string, ttlSeconds = 30): Promise<WorkerLease | undefined> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const run = await client.query<RunRow & { current_step: number; lease_expires_at: Date | null }>(
+        `select id, tenant_id, workflow_id, state, input, budget_cents, idempotency_key, created_at, current_step, lease_expires_at
+         from workflow_runs
+         where id = $1 and (state = 'queued' or (state = 'leased' and lease_expires_at < now()))
+         for update skip locked`,
+        [runId]
+      );
+      if (!run.rows[0]) {
+        await client.query("commit");
+        return undefined;
+      }
+      const row = run.rows[0];
+      const workflow = await client.query<{ definition: WorkflowDefinition }>("select definition from workflow_definitions where id = $1 and tenant_id = $2", [row.workflow_id, row.tenant_id]);
+      if (!workflow.rows[0]) throw new Error("Workflow definition missing for leased run");
+      const updated = await client.query<{ lease_expires_at: Date }>(
+        `update workflow_runs set state = 'leased', lease_owner = $1,
+         lease_expires_at = now() + ($2::text || ' seconds')::interval, updated_at = now()
+         where id = $3 returning lease_expires_at`,
+        [workerId, ttlSeconds, runId]
+      );
+      await client.query("insert into run_events (tenant_id, run_id, event_type, detail) values ($1, $2, 'leased', 'Worker lease acquired')", [row.tenant_id, runId]);
+      await client.query("commit");
+      return {
+        run: await this.readRunSystem({ ...row, state: "leased" }),
+        definition: workflowDefinitionSchema.parse(workflow.rows[0].definition),
+        currentStep: row.current_step,
+        leaseOwner: workerId,
+        leaseExpiresAt: updated.rows[0]!.lease_expires_at.toISOString()
+      };
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async readRunInTransaction(client: PoolClient, tenantId: string, row: RunRow): Promise<StoredRun> {
     const events = await client.query<EventRow>("select created_at, event_type, detail, trace_id from run_events where tenant_id = $1 and run_id = $2 order by id", [tenantId, row.id]);
+    return toRun(row, events.rows.map(toEvent));
+  }
+
+  private async readRunSystem(row: RunRow): Promise<StoredRun> {
+    const events = await this.pool.query<EventRow>("select created_at, event_type, detail, trace_id from run_events where tenant_id = $1 and run_id = $2 order by id", [row.tenant_id, row.id]);
     return toRun(row, events.rows.map(toEvent));
   }
 

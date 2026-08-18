@@ -74,4 +74,18 @@ integration("PostgreSQL durable store", () => {
       await connection.drain();
     }
   });
+
+  it("allows one worker lease at a time and recovers an expired lease", async () => {
+    const principal = await store.authenticate(tenantSlug, apiKey);
+    if (!principal) throw new Error("fixture authentication failed");
+    const leaseWorkflow = await store.createWorkflow(principal, { ...workflow, name: "lease-fixture" });
+    const created = await store.createRun(principal, { workflowId: leaseWorkflow.id, input: { query: "lease fixture" } }, "postgres-lease-key-0001");
+
+    const first = await store.claimRunLease(created.run.id, "worker-a", 30);
+    expect(first).toMatchObject({ leaseOwner: "worker-a", currentStep: 0, run: { id: created.run.id, state: "leased" } });
+    await expect(store.claimRunLease(created.run.id, "worker-b", 30)).resolves.toBeUndefined();
+
+    await store.pool.query("update workflow_runs set lease_expires_at = now() - interval '1 second' where id = $1", [created.run.id]);
+    await expect(store.claimRunLease(created.run.id, "worker-b", 30)).resolves.toMatchObject({ leaseOwner: "worker-b" });
+  });
 });
