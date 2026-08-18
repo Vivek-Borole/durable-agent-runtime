@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -233,6 +235,17 @@ func (s runtimeStore) executeTool(ctx context.Context, run *leasedRun, index int
 		}
 		defer response.Body.Close()
 		if response.ContentLength > 1_000_000 {
+			return s.fail(ctx, run, "http_response_too_large")
+		}
+		contentType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+		if parseErr != nil || (contentType != "application/json" && contentType != "text/plain") {
+			return s.fail(ctx, run, "http_content_type_not_allowed")
+		}
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 1_000_001))
+		if readErr != nil {
+			return s.fail(ctx, run, "http_fetch_failed")
+		}
+		if len(body) > 1_000_000 {
 			return s.fail(ctx, run, "http_response_too_large")
 		}
 		return s.recordStep(ctx, run, index, "tool", "succeeded", "allowlisted-http-fetch")
