@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createRunSchema, runStateSchema, workflowDefinitionSchema } from "@dar/contracts";
 import { InMemoryDurableStore, type Principal, type Role, type RuntimeStore } from "./store.js";
@@ -25,6 +26,13 @@ function requireRole(principal: Principal, roles: Role[]): void {
 
 export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenantId: "demo-tenant", apiKey: "replace-with-a-long-local-key" })): FastifyInstance {
   const app = Fastify({ logger: false });
+  void app.register(cors, {
+    origin: (origin, callback) => {
+      const allowed = (process.env.CONSOLE_ORIGIN ?? "http://127.0.0.1:5173").split(",");
+      callback(null, !origin || allowed.includes(origin));
+    },
+    credentials: false
+  });
 
   app.addHook("preHandler", async (request, reply) => {
     if (request.url === "/healthz") return;

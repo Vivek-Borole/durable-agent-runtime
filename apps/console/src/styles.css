@@ -14,6 +14,8 @@ input { background: #091427; border: 1px solid #2a4263; border-radius: 9px; colo
 button { background: #6fe0c6; border: 0; border-radius: 9px; color: #06221f; cursor: pointer; font-weight: 800; min-height: 42px; padding: 10px 15px; }
 button:disabled { cursor: wait; opacity: .6; }
 button.secondary { background: transparent; border: 1px solid #3b5578; color: #dce8fa; }
+button.danger { background: transparent; border: 1px solid #a35060; color: #ffd9df; }
+.actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .notice { color: #b5c3d8; margin: 16px 2px 30px; }
 .grid { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
 li { margin: 9px 0; }
@@ -23,4 +25,3 @@ ol li { align-items: baseline; border-top: 1px solid #223a59; display: grid; gap
 time { color: #7d90aa; font-variant-numeric: tabular-nums; }
 strong { text-transform: capitalize; }
 @media (max-width: 760px) { .connection, .grid { grid-template-columns: 1fr; } ol li { grid-template-columns: 1fr; gap: 4px; } main { padding-top: 42px; } }
-

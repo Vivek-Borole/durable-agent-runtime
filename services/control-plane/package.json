@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dar/contracts": "workspace:*",
+    "@fastify/cors": "11.1.0",
     "fastify": "5.8.5",
     "nats": "2.29.3",
     "pg": "8.16.3",

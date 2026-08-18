@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type RunEvent = { at: string; type: string; detail: string; traceId?: string };
 type Run = { id: string; state: string; workflowId: string; budgetCents: number; events: RunEvent[] };
@@ -41,7 +41,10 @@ export function App() {
     setBusy(true);
     setMessage("Creating immutable workflow definition…");
     try {
-      const workflow = await request("/v1/workflows", { method: "POST", body: JSON.stringify(demoWorkflow) });
+      const workflow = await request("/v1/workflows", {
+        method: "POST",
+        body: JSON.stringify({ ...demoWorkflow, name: `research-demo-${crypto.randomUUID().slice(0, 8)}` })
+      });
       setMessage("Queueing an idempotent run. No provider key or real external action is used.");
       const created = await request("/v1/runs", {
         method: "POST",
@@ -49,7 +52,7 @@ export function App() {
         body: JSON.stringify({ workflowId: workflow.workflow.id, input: { query: "synthetic safe fixture" } })
       });
       setRun(created.run);
-      setMessage("Run queued. The worker milestone will lease steps and stop before the side-effecting tool for approval.");
+      setMessage("Run queued. The worker will stop at approval before the mock side effect.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not create run");
     } finally {
@@ -70,6 +73,40 @@ export function App() {
       setBusy(false);
     }
   }
+
+  async function approve() {
+    if (!run) return;
+    setBusy(true);
+    try {
+      const result = await request(`/v1/runs/${run.id}/approve`, { method: "POST" });
+      setRun(result.run);
+      setMessage("Approval recorded. The run is safely re-queued at the next step.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not approve run");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    if (!run) return;
+    setBusy(true);
+    try {
+      const result = await request(`/v1/runs/${run.id}/cancel`, { method: "POST" });
+      setRun(result.run);
+      setMessage("Cancellation recorded. No new work will be leased.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not cancel run");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!run || ["succeeded", "failed", "cancelled", "uncertain", "awaiting_approval"].includes(run.state)) return;
+    const timer = window.setInterval(() => void refresh(), 1500);
+    return () => window.clearInterval(timer);
+  }, [run?.id, run?.state]);
 
   return (
     <main>
@@ -99,7 +136,7 @@ export function App() {
           <p className="eyebrow">Run status</p>
           <h2>{stateLabel(run?.state)}</h2>
           <p>{run ? `Run ${run.id.slice(0, 8)} · budget ${(run.budgetCents / 100).toFixed(2)} USD` : "No run created yet"}</p>
-          {run && <button className="secondary" onClick={() => void refresh()} disabled={busy}>Refresh timeline</button>}
+          {run && <div className="actions"><button className="secondary" onClick={() => void refresh()} disabled={busy}>Refresh timeline</button>{run.state === "awaiting_approval" && <button onClick={() => void approve()} disabled={busy}>Approve mock ticket</button>}{!["succeeded", "failed", "cancelled", "uncertain"].includes(run.state) && <button className="danger" onClick={() => void cancel()} disabled={busy}>Cancel run</button>}</div>}
         </article>
       </section>
       <section className="card timeline">
@@ -109,4 +146,3 @@ export function App() {
     </main>
   );
 }
-
