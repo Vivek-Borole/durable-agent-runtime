@@ -14,18 +14,23 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 type queuedRun struct {
 	RunID string `json:"runId"`
 }
+
+var errInvalidQueueMessage = errors.New("invalid queued run message")
 
 type workflowDefinition struct {
 	AllowedHosts []string          `json:"allowedHosts"`
@@ -59,7 +64,13 @@ func main() {
 		slog.Error("DAR_WORKER_POSTGRES_URL is required")
 		return
 	}
-	pool, err := pgxpool.New(ctx, databaseURL)
+	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		slog.Error("worker database configuration failed", "error", err)
+		return
+	}
+	poolConfig.MaxConns = int32(workerConcurrency())
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		slog.Error("worker database connection failed", "error", err)
 		return
@@ -75,52 +86,107 @@ func main() {
 		return
 	}
 	defer nc.Drain()
-	js, err := nc.JetStream()
+	streamName := environmentOr("DAR_STREAM", "DAR")
+	queueSubject := environmentOr("DAR_QUEUE_SUBJECT", "dar.run.queued")
+	consumerName := environmentOr("DAR_CONSUMER", "dar-worker-v1")
+	legacyJS, err := nc.JetStream()
 	if err != nil {
 		slog.Error("JetStream unavailable", "error", err)
 		return
 	}
-	if _, err = js.StreamInfo("DAR"); errors.Is(err, nats.ErrStreamNotFound) {
-		_, err = js.AddStream(&nats.StreamConfig{Name: "DAR", Subjects: []string{"dar.run.queued"}, Storage: nats.FileStorage})
+	if _, err = legacyJS.StreamInfo(streamName); errors.Is(err, nats.ErrStreamNotFound) {
+		_, err = legacyJS.AddStream(&nats.StreamConfig{Name: streamName, Subjects: []string{queueSubject}, Storage: nats.FileStorage})
 	}
 	if err != nil {
 		slog.Error("JetStream stream setup failed", "error", err)
 		return
 	}
-	sub, err := js.PullSubscribe("dar.run.queued", "dar-worker", nats.BindStream("DAR"))
+	js, err := jetstream.New(nc)
+	if err != nil {
+		slog.Error("JetStream client setup failed", "error", err)
+		return
+	}
+	consumer, err := js.CreateOrUpdateConsumer(ctx, streamName, jetstream.ConsumerConfig{
+		// Consumer names are deployment state. Bumping the name avoids silently
+		// inheriting an incompatible pre-continuous-pull consumer configuration.
+		Durable:       consumerName,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       2 * time.Minute,
+		MaxAckPending: workerConcurrency() * 4,
+		FilterSubject: queueSubject,
+	})
 	if err != nil {
 		slog.Error("JetStream consumer setup failed", "error", err)
 		return
 	}
 
 	store := runtimeStore{pool: pool}
-	workerID := "dar-worker-" + hostname()
-	slog.Info("durable agent worker started", "delivery", "at-least-once", "worker", workerID)
-	for ctx.Err() == nil {
-		messages, fetchErr := sub.Fetch(1, nats.MaxWait(time.Second))
-		if errors.Is(fetchErr, nats.ErrTimeout) {
-			continue
-		}
-		if fetchErr != nil {
-			slog.Warn("JetStream fetch failed", "error", fetchErr)
-			continue
-		}
-		for _, message := range messages {
-			if err := store.process(ctx, workerID, message.Data); err != nil {
-				slog.Warn("run delivery not acknowledged", "error", err)
-				_ = message.Nak()
-				continue
+	workerID := fmt.Sprintf("dar-worker-%s-%d", hostname(), os.Getpid())
+	concurrency := workerConcurrency()
+	iterator, err := consumer.Messages(jetstream.PullMaxMessages(concurrency*4), jetstream.PullThresholdMessages(concurrency*2), jetstream.PullExpiry(2*time.Second))
+	if err != nil {
+		slog.Error("JetStream message iterator setup failed", "error", err)
+		return
+	}
+	defer iterator.Stop()
+	jobs := make(chan jetstream.Msg, concurrency*4)
+	var inFlight sync.WaitGroup
+	for range concurrency {
+		inFlight.Add(1)
+		go func() {
+			defer inFlight.Done()
+			for message := range jobs {
+				if err := store.process(ctx, workerID, message.Data()); err != nil {
+					if errors.Is(err, errInvalidQueueMessage) {
+						slog.Warn("discarded invalid queue message")
+						_ = message.Ack()
+						continue
+					}
+					slog.Warn("run delivery not acknowledged", "error", err)
+					_ = message.Nak()
+					continue
+				}
+				_ = message.Ack()
 			}
-			_ = message.Ack()
+		}()
+	}
+	slog.Info("durable agent worker started", "delivery", "at-least-once", "worker", workerID, "concurrency", concurrency)
+	for ctx.Err() == nil {
+		message, nextErr := iterator.Next(jetstream.NextContext(ctx))
+		if nextErr != nil {
+			if ctx.Err() == nil {
+				slog.Warn("JetStream next message failed", "error", nextErr)
+			}
+			continue
+		}
+		select {
+		case jobs <- message:
+		case <-ctx.Done():
 		}
 	}
+	close(jobs)
+	inFlight.Wait()
 	slog.Info("durable agent worker stopped")
+}
+
+func workerConcurrency() int {
+	if parsed, err := strconv.Atoi(os.Getenv("DAR_WORKER_CONCURRENCY")); err == nil && parsed > 0 && parsed <= 128 {
+		return parsed
+	}
+	return 16
+}
+
+func environmentOr(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (s runtimeStore) process(ctx context.Context, workerID string, data []byte) error {
 	var message queuedRun
-	if err := json.Unmarshal(data, &message); err != nil || message.RunID == "" {
-		return fmt.Errorf("invalid queued run message")
+	if err := json.Unmarshal(data, &message); err != nil || !isUUID(message.RunID) {
+		return errInvalidQueueMessage
 	}
 	run, err := s.claim(ctx, message.RunID, workerID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -130,6 +196,24 @@ func (s runtimeStore) process(ctx context.Context, workerID string, data []byte)
 		return err
 	}
 	return s.execute(ctx, run)
+}
+
+func isUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index, char := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			if char != '-' {
+				return false
+			}
+			continue
+		}
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s runtimeStore) claim(ctx context.Context, runID, workerID string) (*leasedRun, error) {
@@ -144,7 +228,7 @@ func (s runtimeStore) claim(ctx context.Context, runID, workerID string) (*lease
 	err = tx.QueryRow(ctx, `select r.tenant_id::text, r.current_step, r.input, w.definition, r.provider_credential_handle::text
       from workflow_runs r join workflow_definitions w on w.id = r.workflow_id
       where r.id = $1 and (r.state = 'queued' or (r.state in ('leased', 'running') and r.lease_expires_at < now()))
-		for update skip locked`, runID).Scan(&tenantID, &currentStep, &inputRaw, &definitionRaw, &credentialHandle)
+		for update of r skip locked`, runID).Scan(&tenantID, &currentStep, &inputRaw, &definitionRaw, &credentialHandle)
 	if err != nil {
 		return nil, err
 	}

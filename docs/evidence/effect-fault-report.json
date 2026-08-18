@@ -2,7 +2,7 @@
   "attempts": 100000,
   "workers": 100,
   "committedEffects": 1,
-  "durationMillis": 5977,
+  "durationMillis": 6412,
   "passed": true,
   "failureConditions": [
     "concurrent duplicate delivery of one stable effect key",
@@ -12,7 +12,10 @@
     "os": "darwin",
     "arch": "arm64",
     "cpus": 11,
-    "goVersion": "go1.26.6"
+    "memoryBytes": 19327352832,
+    "goVersion": "go1.26.6",
+    "nodeVersion": "v22.23.1",
+    "dockerVersion": "Docker version 29.7.2, build a7dcaa6fdb"
   },
-  "completedAt": "2026-08-18T21:38:42.543063Z"
+  "completedAt": "2026-08-18T22:07:42.720623Z"
 }
