@@ -24,6 +24,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type queuedRun struct {
@@ -59,6 +61,8 @@ type runtimeStore struct{ pool *pgxpool.Pool }
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTelemetry := startTelemetry(ctx)
+	defer shutdownTelemetry(context.Background())
 	databaseURL := os.Getenv("DAR_WORKER_POSTGRES_URL")
 	if databaseURL == "" {
 		slog.Error("DAR_WORKER_POSTGRES_URL is required")
@@ -188,6 +192,9 @@ func (s runtimeStore) process(ctx context.Context, workerID string, data []byte)
 	if err := json.Unmarshal(data, &message); err != nil || !isUUID(message.RunID) {
 		return errInvalidQueueMessage
 	}
+	ctx, span := otel.Tracer("durable-agent-runtime.worker").Start(ctx, "run.process")
+	span.SetAttributes(attribute.String("run.id", message.RunID))
+	defer span.End()
 	run, err := s.claim(ctx, message.RunID, workerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
@@ -259,35 +266,47 @@ func (s runtimeStore) execute(ctx context.Context, run *leasedRun) error {
 		if err := json.Unmarshal(run.Definition.Steps[index], &current); err != nil {
 			return s.fail(ctx, run, "invalid_workflow_step")
 		}
+		stepCtx, span := otel.Tracer("durable-agent-runtime.worker").Start(ctx, "run.step")
+		span.SetAttributes(attribute.Int("workflow.step.index", index), attribute.String("workflow.step.kind", current.Kind))
+		var stepErr error
 		switch current.Kind {
 		case "approval":
-			return s.awaitApproval(ctx, run, index)
+			stepErr = s.awaitApproval(stepCtx, run, index)
+			span.End()
+			return stepErr
 		case "model":
 			if current.Provider == "mock" {
-				if err := s.recordStep(ctx, run, index, "model", "succeeded", "mock-model"); err != nil {
-					return err
+				if err := s.recordStep(stepCtx, run, index, "model", "succeeded", "mock-model"); err != nil {
+					stepErr = err
+					break
 				}
 				break
 			}
 			if current.Provider != "openai_compatible" {
-				return s.fail(ctx, run, "provider_not_configured")
+				stepErr = s.fail(stepCtx, run, "provider_not_configured")
+				break
 			}
-			if err := s.executeProviderModel(ctx, run, index, current); err != nil {
-				return err
+			if err := s.executeProviderModel(stepCtx, run, index, current); err != nil {
+				stepErr = err
 			}
 		case "transform":
 			if current.Operation != "extract_json" && current.Operation != "template" {
-				return s.fail(ctx, run, "unsupported_transform")
+				stepErr = s.fail(stepCtx, run, "unsupported_transform")
+				break
 			}
-			if err := s.recordStep(ctx, run, index, "transform", "succeeded", current.Operation); err != nil {
-				return err
+			if err := s.recordStep(stepCtx, run, index, "transform", "succeeded", current.Operation); err != nil {
+				stepErr = err
 			}
 		case "tool":
-			if err := s.executeTool(ctx, run, index, current); err != nil {
-				return err
+			if err := s.executeTool(stepCtx, run, index, current); err != nil {
+				stepErr = err
 			}
 		default:
-			return s.fail(ctx, run, "unsupported_step")
+			stepErr = s.fail(stepCtx, run, "unsupported_step")
+		}
+		span.End()
+		if stepErr != nil {
+			return stepErr
 		}
 		if _, err := s.pool.Exec(ctx, "update workflow_runs set current_step = $1, lease_expires_at = now() + interval '30 seconds', updated_at = now() where id = $2", index+1, run.ID); err != nil {
 			return err
