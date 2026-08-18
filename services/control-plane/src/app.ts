@@ -4,10 +4,13 @@ import { createRunSchema, runStateSchema, workflowDefinitionSchema } from "@dar/
 import { InMemoryDurableStore, type Principal, type Role, type RuntimeStore } from "./store.js";
 import { CredentialBroker } from "./credential-broker.js";
 import { httpDuration, httpRequests, metrics } from "./metrics.js";
+import { SpanStatusCode, type Span } from "@opentelemetry/api";
+import { requestTracer } from "./telemetry.js";
 
 declare module "fastify" {
   interface FastifyRequest {
     principal?: Principal;
+    telemetrySpan?: Span;
   }
 }
 
@@ -47,11 +50,20 @@ export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenan
     request.principal = principal;
   });
 
+  app.addHook("onRequest", async (request) => {
+    request.telemetrySpan = requestTracer().startSpan("http.request", {
+      attributes: { "http.request.method": request.method, "url.path": request.routeOptions.url ?? request.url.split("?")[0] }
+    });
+  });
+
   app.addHook("onResponse", async (request, reply) => {
     const route = request.routeOptions.url ?? "unmatched";
     const status = String(reply.statusCode);
     httpRequests.inc({ route, status });
     httpDuration.observe({ route, status }, reply.elapsedTime / 1_000);
+    request.telemetrySpan?.setAttribute("http.response.status_code", reply.statusCode);
+    request.telemetrySpan?.setStatus({ code: reply.statusCode >= 500 ? SpanStatusCode.ERROR : SpanStatusCode.UNSET });
+    request.telemetrySpan?.end();
   });
 
   app.get("/healthz", async () => ({ status: "ok" }));

@@ -5,3 +5,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  protobufjs: false
+
+overrides:
+  protobufjs: 8.4.1

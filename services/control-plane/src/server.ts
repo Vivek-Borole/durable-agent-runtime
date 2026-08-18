@@ -1,4 +1,6 @@
-import { createApp } from "./app.js";
+import { startTelemetry } from "./telemetry.js";
+startTelemetry();
+const { createApp } = await import("./app.js");
 import { CredentialBroker } from "./credential-broker.js";
 import { PostgresDurableStore } from "./postgres-store.js";
 import { InMemoryDurableStore } from "./store.js";
