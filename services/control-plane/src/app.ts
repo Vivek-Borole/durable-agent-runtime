@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createRunSchema, runStateSchema, workflowDefinitionSchema } from "@dar/contracts";
 import { InMemoryDurableStore, type Principal, type Role, type RuntimeStore } from "./store.js";
+import { CredentialBroker } from "./credential-broker.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -24,7 +25,7 @@ function requireRole(principal: Principal, roles: Role[]): void {
   if (!roles.includes(principal.role)) throw new Error("Insufficient role");
 }
 
-export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenantId: "demo-tenant", apiKey: "replace-with-a-long-local-key" })): FastifyInstance {
+export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenantId: "demo-tenant", apiKey: "replace-with-a-long-local-key" }), broker = new CredentialBroker()): FastifyInstance {
   const app = Fastify({ logger: false });
   void app.register(cors, {
     origin: (origin, callback) => {
@@ -35,7 +36,7 @@ export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenan
   });
 
   app.addHook("preHandler", async (request, reply) => {
-    if (request.url === "/healthz") return;
+    if (request.url === "/healthz" || request.url.startsWith("/internal/")) return;
     const tenantId = request.headers["x-tenant-id"];
     const apiKey = request.headers["x-api-key"];
     const tenant = typeof tenantId === "string" ? tenantId : undefined;
@@ -66,13 +67,22 @@ export function createApp(store: RuntimeStore = new InMemoryDurableStore({ tenan
     const parsed = createRunSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_run", details: parsed.error.issues });
     try {
-      const { providerCredential: _providerCredential, ...persisted } = parsed.data;
-      const result = await store.createRun(principal, persisted, key);
+      const { providerCredential, ...persisted } = parsed.data;
+      const providerCredentialHandle = providerCredential ? broker.issue(providerCredential) : undefined;
+      const result = await store.createRun(principal, { ...persisted, providerCredentialHandle }, key);
+      if (result.replayed && providerCredentialHandle) broker.discard(providerCredentialHandle);
       return reply.code(result.replayed ? 200 : 201).send({ run: result.run, replayed: result.replayed });
     } catch (error) {
       const message = error instanceof Error ? error.message : "run_creation_failed";
       return reply.code(message.includes("quota") ? 429 : message === "Workflow not found" ? 404 : 500).send({ error: message });
     }
+  });
+
+  app.post("/internal/credentials/:handle/consume", async (request, reply) => {
+    const internalToken = process.env.DAR_INTERNAL_TOKEN;
+    if (!internalToken || request.headers["x-runtime-internal-token"] !== internalToken) return reply.code(401).send({ error: "internal_unauthenticated" });
+    const credential = broker.consume((request.params as { handle: string }).handle);
+    return credential ? reply.send({ credential }) : reply.code(404).send({ error: "provider_credential_unavailable" });
   });
 
   app.get("/v1/runs/:runId", async (request, reply) => {

@@ -121,7 +121,7 @@ export class PostgresDurableStore implements RuntimeStore {
     });
   }
 
-  async createRun(principal: Principal, request: Omit<CreateRun, "providerCredential">, idempotencyKey: string): Promise<{ run: StoredRun; replayed: boolean }> {
+  async createRun(principal: Principal, request: Omit<CreateRun, "providerCredential"> & { providerCredentialHandle?: string }, idempotencyKey: string): Promise<{ run: StoredRun; replayed: boolean }> {
     return this.withTenant(principal.tenantId, async (client) => {
       const existing = await client.query<RunRow>(
         `select id, tenant_id, workflow_id, state, input, budget_cents, idempotency_key, created_at
@@ -150,11 +150,11 @@ export class PostgresDurableStore implements RuntimeStore {
       );
       if (!workflow.rows[0]) throw new Error("Workflow not found");
       const inserted = await client.query<RunRow>(
-        `insert into workflow_runs (tenant_id, workflow_id, idempotency_key, input, budget_cents)
-         values ($1, $2, $3, $4::jsonb, $5)
+        `insert into workflow_runs (tenant_id, workflow_id, idempotency_key, input, budget_cents, provider_credential_handle)
+         values ($1, $2, $3, $4::jsonb, $5, $6::uuid)
          on conflict (tenant_id, idempotency_key) do nothing
          returning id, tenant_id, workflow_id, state, input, budget_cents, idempotency_key, created_at`,
-        [principal.tenantId, request.workflowId, idempotencyKey, JSON.stringify(request.input), workflow.rows[0].budget_cents]
+        [principal.tenantId, request.workflowId, idempotencyKey, JSON.stringify(request.input), workflow.rows[0].budget_cents, request.providerCredentialHandle ?? null]
       );
       if (!inserted.rows[0]) {
         const raced = await client.query<RunRow>(

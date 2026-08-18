@@ -33,18 +33,20 @@ type workflowDefinition struct {
 }
 
 type step struct {
-	Kind      string `json:"kind"`
-	Provider  string `json:"provider"`
-	Operation string `json:"operation"`
-	Tool      string `json:"tool"`
+	Kind           string `json:"kind"`
+	Provider       string `json:"provider"`
+	PromptTemplate string `json:"promptTemplate"`
+	Operation      string `json:"operation"`
+	Tool           string `json:"tool"`
 }
 
 type leasedRun struct {
-	ID          string
-	TenantID    string
-	CurrentStep int
-	Input       map[string]any
-	Definition  workflowDefinition
+	ID               string
+	TenantID         string
+	CurrentStep      int
+	Input            map[string]any
+	Definition       workflowDefinition
+	CredentialHandle *string
 }
 
 type runtimeStore struct{ pool *pgxpool.Pool }
@@ -137,11 +139,12 @@ func (s runtimeStore) claim(ctx context.Context, runID, workerID string) (*lease
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var tenantID, definitionRaw, inputRaw []byte
+	var credentialHandle *string
 	var currentStep int
-	err = tx.QueryRow(ctx, `select r.tenant_id::text, r.current_step, r.input, w.definition
+	err = tx.QueryRow(ctx, `select r.tenant_id::text, r.current_step, r.input, w.definition, r.provider_credential_handle::text
       from workflow_runs r join workflow_definitions w on w.id = r.workflow_id
       where r.id = $1 and (r.state = 'queued' or (r.state in ('leased', 'running') and r.lease_expires_at < now()))
-      for update skip locked`, runID).Scan(&tenantID, &currentStep, &inputRaw, &definitionRaw)
+		for update skip locked`, runID).Scan(&tenantID, &currentStep, &inputRaw, &definitionRaw, &credentialHandle)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +166,7 @@ func (s runtimeStore) claim(ctx context.Context, runID, workerID string) (*lease
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &leasedRun{ID: runID, TenantID: string(tenantID), CurrentStep: currentStep, Input: input, Definition: definition}, nil
+	return &leasedRun{ID: runID, TenantID: string(tenantID), CurrentStep: currentStep, Input: input, Definition: definition, CredentialHandle: credentialHandle}, nil
 }
 
 func (s runtimeStore) execute(ctx context.Context, run *leasedRun) error {
@@ -176,10 +179,16 @@ func (s runtimeStore) execute(ctx context.Context, run *leasedRun) error {
 		case "approval":
 			return s.awaitApproval(ctx, run, index)
 		case "model":
-			if current.Provider != "mock" {
+			if current.Provider == "mock" {
+				if err := s.recordStep(ctx, run, index, "model", "succeeded", "mock-model"); err != nil {
+					return err
+				}
+				break
+			}
+			if current.Provider != "openai_compatible" {
 				return s.fail(ctx, run, "provider_not_configured")
 			}
-			if err := s.recordStep(ctx, run, index, "model", "succeeded", "mock-model"); err != nil {
+			if err := s.executeProviderModel(ctx, run, index, current); err != nil {
 				return err
 			}
 		case "transform":
@@ -206,6 +215,51 @@ func (s runtimeStore) execute(ctx context.Context, run *leasedRun) error {
 	}
 	_, err = s.pool.Exec(ctx, `insert into run_events (tenant_id, run_id, event_type, detail) values ($1::uuid, $2::uuid, 'succeeded', 'All workflow steps completed')`, run.TenantID, run.ID)
 	return err
+}
+
+func (s runtimeStore) executeProviderModel(ctx context.Context, run *leasedRun, index int, current step) error {
+	if run.CredentialHandle == nil || os.Getenv("DAR_CONTROL_PLANE_INTERNAL_URL") == "" || os.Getenv("DAR_INTERNAL_TOKEN") == "" {
+		return s.uncertain(ctx, run, "provider_credential_unavailable")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(os.Getenv("DAR_CONTROL_PLANE_INTERNAL_URL"), "/")+"/internal/credentials/"+*run.CredentialHandle+"/consume", nil)
+	if err != nil {
+		return s.uncertain(ctx, run, "provider_credential_unavailable")
+	}
+	req.Header.Set("x-runtime-internal-token", os.Getenv("DAR_INTERNAL_TOKEN"))
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil || response.StatusCode != http.StatusOK {
+		if response != nil {
+			response.Body.Close()
+		}
+		return s.uncertain(ctx, run, "provider_credential_unavailable")
+	}
+	defer response.Body.Close()
+	var credential struct {
+		Credential string `json:"credential"`
+	}
+	if json.NewDecoder(io.LimitReader(response.Body, 2048)).Decode(&credential) != nil || credential.Credential == "" {
+		return s.uncertain(ctx, run, "provider_credential_unavailable")
+	}
+	baseURL, model := os.Getenv("OPENAI_COMPATIBLE_BASE_URL"), os.Getenv("OPENAI_COMPATIBLE_MODEL")
+	if baseURL == "" || model == "" {
+		return s.uncertain(ctx, run, "provider_not_configured")
+	}
+	body, _ := json.Marshal(map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": current.PromptTemplate}}})
+	modelRequest, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(baseURL, "/")+"/v1/chat/completions", strings.NewReader(string(body)))
+	modelRequest.Header.Set("Authorization", "Bearer "+credential.Credential)
+	modelRequest.Header.Set("Content-Type", "application/json")
+	modelResponse, err := (&http.Client{Timeout: 20 * time.Second}).Do(modelRequest)
+	if err != nil || modelResponse.StatusCode >= 400 {
+		if modelResponse != nil {
+			modelResponse.Body.Close()
+		}
+		return s.uncertain(ctx, run, "provider_model_unavailable")
+	}
+	defer modelResponse.Body.Close()
+	if _, err = io.ReadAll(io.LimitReader(modelResponse.Body, 1_000_001)); err != nil {
+		return s.uncertain(ctx, run, "provider_model_unavailable")
+	}
+	return s.recordStep(ctx, run, index, "model", "succeeded", "openai-compatible-model")
 }
 
 func (s runtimeStore) executeTool(ctx context.Context, run *leasedRun, index int, current step) error {
@@ -281,6 +335,16 @@ func (s runtimeStore) fail(ctx context.Context, run *leasedRun, code string) err
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `insert into run_events (tenant_id, run_id, event_type, detail) values ($1::uuid, $2::uuid, 'failed', $3)`, run.TenantID, run.ID, code)
+	return err
+}
+
+func (s runtimeStore) uncertain(ctx context.Context, run *leasedRun, code string) error {
+	_, err := s.pool.Exec(ctx, `update workflow_runs set state = 'uncertain', lease_owner = null, lease_expires_at = null, last_error_code = $1,
+      terminal_evidence = jsonb_build_object('errorCode', $1) where id = $2`, code, run.ID)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `insert into run_events (tenant_id, run_id, event_type, detail) values ($1::uuid, $2::uuid, 'uncertain', $3)`, run.TenantID, run.ID, code)
 	return err
 }
 

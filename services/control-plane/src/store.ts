@@ -45,7 +45,7 @@ export interface AuditRecord {
 export interface RuntimeStore {
   authenticate(tenantSlug: string, apiKey: string | undefined): Principal | undefined | Promise<Principal | undefined>;
   createWorkflow(principal: Principal, definition: WorkflowDefinition): StoredWorkflow | Promise<StoredWorkflow>;
-  createRun(principal: Principal, request: Omit<CreateRun, "providerCredential">, idempotencyKey: string): { run: StoredRun; replayed: boolean } | Promise<{ run: StoredRun; replayed: boolean }>;
+  createRun(principal: Principal, request: Omit<CreateRun, "providerCredential"> & { providerCredentialHandle?: string }, idempotencyKey: string): { run: StoredRun; replayed: boolean } | Promise<{ run: StoredRun; replayed: boolean }>;
   readRun(principal: Principal, runId: string): StoredRun | undefined | Promise<StoredRun | undefined>;
   transition(principal: Principal, runId: string, state: RunState, event: RunEvent): StoredRun | Promise<StoredRun>;
   listAudit(principal: Principal): AuditRecord[] | Promise<AuditRecord[]>;

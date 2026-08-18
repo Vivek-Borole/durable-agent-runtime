@@ -1,4 +1,5 @@
 import { createApp } from "./app.js";
+import { CredentialBroker } from "./credential-broker.js";
 import { PostgresDurableStore } from "./postgres-store.js";
 import { InMemoryDurableStore } from "./store.js";
 
@@ -12,6 +13,6 @@ if (store instanceof PostgresDurableStore) {
   await store.bootstrap({ tenantSlug: tenantId, apiKey });
 }
 
-const app = createApp(store);
+const app = createApp(store, new CredentialBroker());
 
 await app.listen({ host: "127.0.0.1", port: Number(process.env.PORT ?? 3001) });
