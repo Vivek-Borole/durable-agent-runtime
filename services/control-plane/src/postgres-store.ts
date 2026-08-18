@@ -16,6 +16,13 @@ type RunRow = {
 
 type EventRow = { created_at: Date; event_type: RunEvent["type"]; detail: string; trace_id: string | null };
 
+export type PendingOutboxMessage = {
+  id: number;
+  tenantId: string;
+  subject: string;
+  payload: Record<string, unknown>;
+};
+
 function equalHash(left: string, right: string): boolean {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
@@ -183,6 +190,39 @@ export class PostgresDurableStore implements RuntimeStore {
     });
   }
 
+  // This system-only path uses the worker database credential, never a tenant
+  // API key. A crash between NATS acknowledgement and the published marker
+  // may redeliver a message; the worker lease and effect ledger handle that.
+  async claimPendingOutbox(limit = 50): Promise<PendingOutboxMessage[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const rows = await client.query<{ id: string; tenant_id: string; subject: string; payload: Record<string, unknown> }>(
+        `select id, tenant_id, subject, payload from workflow_outbox
+         where published_at is null
+         order by id
+         for update skip locked
+         limit $1`,
+        [limit]
+      );
+      if (rows.rows.length > 0) {
+        await client.query("update workflow_outbox set attempts = attempts + 1 where id = any($1::bigint[])", [rows.rows.map((row) => row.id)]);
+      }
+      await client.query("commit");
+      return rows.rows.map((row) => ({ id: Number(row.id), tenantId: row.tenant_id, subject: row.subject, payload: row.payload }));
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markOutboxPublished(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.pool.query("update workflow_outbox set published_at = now() where id = any($1::bigint[])", [ids]);
+  }
+
   private async readRunInTransaction(client: PoolClient, tenantId: string, row: RunRow): Promise<StoredRun> {
     const events = await client.query<EventRow>("select created_at, event_type, detail, trace_id from run_events where tenant_id = $1 and run_id = $2 order by id", [tenantId, row.id]);
     return toRun(row, events.rows.map(toEvent));
@@ -214,4 +254,3 @@ export class PostgresDurableStore implements RuntimeStore {
 export function providerKeyFingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
-

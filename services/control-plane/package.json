@@ -5,12 +5,14 @@
   "scripts": {
     "build": "pnpm --filter @dar/contracts build && tsc -p tsconfig.json",
     "dev": "pnpm --filter @dar/contracts build && tsx watch src/server.ts",
+    "outbox": "tsx src/publish.ts",
     "typecheck": "pnpm --filter @dar/contracts build && tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@dar/contracts": "workspace:*",
     "fastify": "5.6.1",
+    "nats": "2.29.3",
     "pg": "8.16.3",
     "zod": "4.1.12"
   },

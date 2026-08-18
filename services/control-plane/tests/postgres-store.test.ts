@@ -1,8 +1,11 @@
 import { randomBytes } from "node:crypto";
+import { connect } from "nats";
 import { afterAll, describe, expect, it } from "vitest";
+import { OutboxPublisher } from "../src/outbox-publisher.js";
 import { PostgresDurableStore } from "../src/postgres-store.js";
 
 const databaseUrl = process.env.POSTGRES_URL;
+const natsUrl = process.env.NATS_URL;
 const integration = databaseUrl ? describe : describe.skip;
 
 const workflow = {
@@ -48,5 +51,27 @@ integration("PostgreSQL durable store", () => {
     expect(replay.run.id).toBe(first.run.id);
     expect(replay.run.input).toEqual({ query: "fixture" });
     expect(await store.readRun(otherPrincipal, first.run.id)).toBeUndefined();
+  });
+
+  it.skipIf(!natsUrl)("publishes a committed outbox entry to JetStream", async () => {
+    const principal = await store.authenticate(tenantSlug, apiKey);
+    if (!principal) throw new Error("fixture authentication failed");
+    const outboxWorkflow = await store.createWorkflow(principal, { ...workflow, name: "outbox-fixture" });
+    await store.createRun(principal, { workflowId: outboxWorkflow.id, input: { query: "outbox fixture" } }, "postgres-outbox-key-0001");
+
+    const connection = await connect({ servers: natsUrl!, name: "dar-outbox-test" });
+    const manager = await connection.jetstreamManager();
+    await manager.streams.delete("DAR_TEST").catch(() => undefined);
+    await manager.streams.add({ name: "DAR_TEST", subjects: ["dar.run.queued"], storage: "memory" });
+    try {
+      const publisher = new OutboxPublisher(store, connection.jetstream());
+      // The preceding idempotency fixture intentionally created one queued
+      // run, so this verifies the publisher drains the durable backlog too.
+      await expect(publisher.publishPending()).resolves.toBe(2);
+      await expect(manager.streams.info("DAR_TEST")).resolves.toMatchObject({ state: { messages: 2 } });
+    } finally {
+      await manager.streams.delete("DAR_TEST").catch(() => undefined);
+      await connection.drain();
+    }
   });
 });
