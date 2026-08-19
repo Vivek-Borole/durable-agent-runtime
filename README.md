@@ -54,10 +54,13 @@ effect-ledger race test. The recorded synthetic evidence includes a
 a [1,000-resident / 10,000-backlog scheduling benchmark](docs/evidence/scheduling-benchmark-report.json),
 an [expired-lease recovery simulation](docs/evidence/lease-recovery-report.json),
 and [synthetic console screenshots](docs/evidence/screenshots/).
-Real process-termination recovery, exported OpenTelemetry traces, a Grafana
-dashboard screenshot, a demo video, clean-machine smoke evidence, and remote
-CI/release evidence are still required before a public release.
+The evidence package also contains a real worker-process interruption recovery
+run, exported OpenTelemetry trace output, a Grafana dashboard screenshot, a
+clean-Compose smoke log, and an animated synthetic walkthrough. Remote CI,
+GitHub Pages publication, a release tag, and the repository visibility change
+remain release operations and are performed only after their checks pass.
 
 Read [the architecture](docs/architecture.md), [threat model](docs/threat-model.md),
 [API contract](contracts/openapi.yaml), [Compose quick start](docs/compose-quickstart.md),
-and [API examples](docs/api-examples.md) before extending the runtime.
+and [API examples](docs/api-examples.md) before extending the runtime. The
+published release also exposes a compact [evidence index](docs/index.html).

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Durable Agent Runtime — release evidence</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #101725; color: #e9eef7; }
+      body { max-width: 880px; margin: 0 auto; padding: 48px 24px 80px; line-height: 1.55; }
+      h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; letter-spacing: -.04em; margin: 0 0 12px; }
+      h2 { margin-top: 42px; }
+      a { color: #80c7ff; } .lede { color: #b9c6d8; font-size: 1.15rem; max-width: 66ch; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; }
+      .card { padding: 17px; background: #182237; border: 1px solid #2b3a59; border-radius: 12px; }
+      .card b { display: block; margin-bottom: 5px; } code { background: #1c2942; border-radius: 4px; padding: 2px 5px; }
+      img { display: block; width: 100%; margin: 18px 0; border: 1px solid #2b3a59; border-radius: 10px; }
+      footer { color: #a4b2c5; margin-top: 50px; font-size: .9rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Durable Agent Runtime</h1>
+      <p class="lede">A constrained, recoverable multi-tenant workflow runtime. Delivery is at-least-once; PostgreSQL idempotency protects committed mock side effects. This page links only to reproducible synthetic release evidence.</p>
+
+      <h2>Verified evidence</h2>
+      <section class="grid">
+        <article class="card"><b>100,000 effect attempts</b><a href="evidence/effect-fault-report.json">Machine-readable fault report</a></article>
+        <article class="card"><b>10,000-run backlog</b><a href="evidence/scheduling-benchmark-report.json">Scheduling benchmark report</a></article>
+        <article class="card"><b>Process recovery</b><a href="evidence/process-recovery-report.json">Killed-worker recovery report</a></article>
+        <article class="card"><b>Reproduction</b><a href="https://github.com/Vivek-Borole/durable-agent-runtime/blob/main/docs/evidence/README.md">Commands, constraints, and raw logs</a></article>
+      </section>
+
+      <h2>System documentation</h2>
+      <section class="grid">
+        <article class="card"><b>Architecture</b><a href="https://github.com/Vivek-Borole/durable-agent-runtime/blob/main/docs/architecture.md">Data flow and state machine</a></article>
+        <article class="card"><b>Threat model</b><a href="https://github.com/Vivek-Borole/durable-agent-runtime/blob/main/docs/threat-model.md">Assets, boundaries, mitigations</a></article>
+        <article class="card"><b>API contract</b><a href="https://github.com/Vivek-Borole/durable-agent-runtime/blob/main/contracts/openapi.yaml">OpenAPI 3.1 specification</a></article>
+        <article class="card"><b>Quick start</b><a href="https://github.com/Vivek-Borole/durable-agent-runtime/blob/main/docs/compose-quickstart.md">Local Compose instructions</a></article>
+      </section>
+
+      <h2>Synthetic console walkthrough</h2>
+      <p>The workflow shown below pauses for approval and then resumes to one idempotent mock-ticket effect. It contains no real tenant data, credentials, provider response, or external side effect.</p>
+      <img src="evidence/synthetic-demo.gif" alt="Synthetic console: awaiting approval, then succeeded" />
+
+      <h2>Observability snapshot</h2>
+      <img src="evidence/screenshots/grafana-runtime-overview.png" alt="Synthetic local Grafana dashboard" />
+      <p>See the <a href="https://github.com/Vivek-Borole/durable-agent-runtime/blob/main/docs/release-evidence.md">release-evidence checklist</a> for scope and release restrictions.</p>
+    </main>
+    <footer>Durable Agent Runtime v0.1.0 — local synthetic evidence only; not a production SaaS claim.</footer>
+  </body>
+</html>

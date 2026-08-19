@@ -9,12 +9,16 @@ Completed synthetic evidence:
 - [x] expired-lease recovery simulation with one committed mock effect;
 - [x] secret/PII operational-text redaction tests;
 - [x] synthetic console screenshots of approval pause and successful resume.
+- [x] real worker-process interruption/recovery report;
+- [x] exported OpenTelemetry trace and synthetic Grafana screenshot;
+- [x] clean-Compose smoke log;
+- [x] animated synthetic walkthrough.
 
 Before the repository becomes public, still attach:
 
-- a short video made only with synthetic data;
-- GitHub Actions verification, GitHub Pages publication, release assets, tag,
-  and the explicit private-to-public repository change.
+- a passing GitHub Actions run for the exact release commit;
+- GitHub Pages publication and release assets;
+- the `v0.1.0` tag and explicit private-to-public repository change.
 
 `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` are
 already present and must be checked again at release time.
