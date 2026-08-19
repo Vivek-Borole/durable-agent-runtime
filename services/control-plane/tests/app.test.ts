@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import { createApp } from "../src/app.js";
 import { InMemoryDurableStore } from "../src/store.js";
 
@@ -33,9 +34,10 @@ describe("control plane", () => {
     const createdWorkflow = await app.inject({ method: "POST", url: "/v1/workflows", headers, payload: workflow });
     expect(createdWorkflow.statusCode).toBe(201);
     const workflowId = createdWorkflow.json().workflow.id as string;
+    const idempotencyKey = randomUUID();
     const payload = { workflowId, input: { query: "safe fixture" }, providerCredential: "provider-secret-never-persisted" };
-    const first = await app.inject({ method: "POST", url: "/v1/runs", headers: { ...headers, "idempotency-key": "idempotency-key-0001" }, payload });
-    const second = await app.inject({ method: "POST", url: "/v1/runs", headers: { ...headers, "idempotency-key": "idempotency-key-0001" }, payload });
+    const first = await app.inject({ method: "POST", url: "/v1/runs", headers: { ...headers, "idempotency-key": idempotencyKey }, payload });
+    const second = await app.inject({ method: "POST", url: "/v1/runs", headers: { ...headers, "idempotency-key": idempotencyKey }, payload });
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(200);
     expect(first.json().run.id).toBe(second.json().run.id);
