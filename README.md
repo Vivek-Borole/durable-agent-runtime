@@ -57,8 +57,9 @@ and [synthetic console screenshots](docs/evidence/screenshots/).
 The evidence package also contains a real worker-process interruption recovery
 run, exported OpenTelemetry trace output, a Grafana dashboard screenshot, a
 clean-Compose smoke log, and an animated synthetic walkthrough. Remote CI,
-GitHub Pages publication, a release tag, and the repository visibility change
-remain release operations and are performed only after their checks pass.
+GitHub Pages publication, a public repository, and the signed `v0.1.0` release
+are all available. See the [release](https://github.com/Vivek-Borole/durable-agent-runtime/releases/tag/v0.1.0)
+and [evidence site](https://vivek-borole.github.io/durable-agent-runtime/).
 
 Read [the architecture](docs/architecture.md), [threat model](docs/threat-model.md),
 [API contract](contracts/openapi.yaml), [Compose quick start](docs/compose-quickstart.md),

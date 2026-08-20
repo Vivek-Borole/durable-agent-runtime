@@ -14,11 +14,16 @@ Completed synthetic evidence:
 - [x] clean-Compose smoke log;
 - [x] animated synthetic walkthrough.
 
-Before the repository becomes public, still attach:
+Publication record (20 August 2026):
 
-- a passing GitHub Actions run for the exact release commit;
-- GitHub Pages publication and release assets;
-- the `v0.1.0` tag and explicit private-to-public repository change.
+- [x] [passing GitHub Actions verification](https://github.com/Vivek-Borole/durable-agent-runtime/actions/runs/32244485396)
+  for release commit `57d6972532ae4388302a2346ef1b764bb4da8026`;
+- [x] [GitHub Pages evidence site](https://vivek-borole.github.io/durable-agent-runtime/)
+  and [successful deployment](https://github.com/Vivek-Borole/durable-agent-runtime/actions/runs/32331865243);
+- [x] [public `v0.1.0` release](https://github.com/Vivek-Borole/durable-agent-runtime/releases/tag/v0.1.0)
+  with a SHA-256-attested evidence archive;
+- [x] repository visibility changed from private to public only after the tag
+  and release assets existed.
 
 `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` are
 already present and must be checked again at release time.
