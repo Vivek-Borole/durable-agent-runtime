@@ -1,0 +1,21 @@
+groups:
+  - name: durable-agent-runtime-slos
+    rules:
+      - record: dar:scheduling_delay_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(dar_worker_queue_delay_seconds_bucket[5m])) by (le))
+      - alert: DARSchedulingDelaySLOBreach
+        expr: dar:scheduling_delay_seconds:p95_5m > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          { summary: Scheduling p95 exceeds the documented 500 ms SLO }
+      - alert: DARUncertainRun
+        expr: increase(dar_worker_terminal_runs_total{state="uncertain"}[5m]) > 0
+        labels: { severity: critical }
+        annotations:
+          { summary: A workflow ended uncertain and requires investigation }
+      - alert: DAROutboxBacklog
+        expr: dar_outbox_backlog > 100
+        for: 2m
+        labels: { severity: warning }
+        annotations: { summary: Durable outbox publication is falling behind }

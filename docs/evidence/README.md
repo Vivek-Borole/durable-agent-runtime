@@ -2,7 +2,13 @@
 
 These reports are local, synthetic evidence, not production capacity claims.
 They were generated on the documented Apple Silicon development machine using
-Docker Desktop, PostgreSQL, and NATS JetStream from `compose.yaml`.
+Colima, PostgreSQL, and NATS JetStream from `compose.yaml`.
+
+The immutable v0.1 reports retain their original names. The v0.2 candidate adds
+`effect-fault-report-v0.2.json`, `scheduling-benchmark-report-v0.2.json`, and
+`kubernetes-rolling-recovery-v0.2.json`. The latter was produced by the local
+kind smoke and records a two-worker rollout, recovered attempt, and one
+committed synthetic effect.
 
 Reproduce the scheduling report after starting Compose and applying migrations:
 
@@ -12,8 +18,8 @@ DAR_BENCHMARK_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
 DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
 DAR_WORKER_CONCURRENCY=32 \
 go run ./cmd/scheduling-benchmark \
-  -active=1000 -warmup=1000 -backlog=10000 -workers=4 \
-  -output=docs/evidence/scheduling-benchmark-report.json
+  -active=1000 -warmup=1000 -backlog=10000 -workers=2 \
+  -output=docs/evidence/scheduling-benchmark-report-v0.2.json
 ```
 
 The benchmark isolates itself in a unique JetStream stream and consumer. It
@@ -33,7 +39,7 @@ Reproduce the idempotency fault report:
 DAR_BENCHMARK_POSTGRES_URL=postgres://dar:dar@127.0.0.1:5432/dar \
 DAR_WORKER_POSTGRES_URL=postgres://dar_worker:dar-worker-local-only@127.0.0.1:5432/dar \
 go run ./cmd/effect-fault -attempts=100000 -workers=100 \
-  -output=docs/evidence/effect-fault-report.json
+  -output=docs/evidence/effect-fault-report-v0.2.json
 ```
 
 That workload concurrently attempts one stable mock-ticket effect key 100,000

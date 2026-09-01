@@ -89,7 +89,7 @@ func main() {
 	children := make([]*exec.Cmd, 0, *workers)
 	for range *workers {
 		child := exec.Command(binary)
-		child.Env = append(os.Environ(), "DAR_WORKER_POSTGRES_URL="+workerDBURL, "NATS_URL="+natsURL, "DAR_STREAM="+streamName, "DAR_QUEUE_SUBJECT="+queueSubject, "DAR_CONSUMER="+consumerName)
+		child.Env = append(os.Environ(), "DAR_WORKER_POSTGRES_URL="+workerDBURL, "NATS_URL="+natsURL, "DAR_STREAM="+streamName, "DAR_QUEUE_SUBJECT="+queueSubject, "DAR_CONSUMER="+consumerName, "DAR_WORKER_METRICS_ADDR=127.0.0.1:0")
 		child.Stdout, child.Stderr = os.Stderr, os.Stderr
 		if err = child.Start(); err != nil {
 			panic(err)

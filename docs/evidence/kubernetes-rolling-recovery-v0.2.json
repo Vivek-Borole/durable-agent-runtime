@@ -1,0 +1,23 @@
+{
+  "releaseCandidate": "v0.2.0",
+  "cluster": "kind-dar-v02",
+  "kindVersion": "v0.33.0",
+  "kubernetesVersion": "v1.37.0",
+  "helmVersion": "v4.2.4",
+  "workerReplicasReady": 2,
+  "runId": "ff246cdf-4874-46db-9e55-66e5f2763107",
+  "finalState": "succeeded",
+  "attemptCount": 2,
+  "committedEffects": 1,
+  "runEvents": 8,
+  "workerRolloutPerformed": true,
+  "syntheticOnly": true,
+  "passed": true,
+  "completedAt": "2026-09-01T18:24:25Z",
+  "limitations": [
+    "single-node local kind cluster",
+    "single-region synthetic workload",
+    "mock ticket effect only",
+    "does not establish production availability"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "attempts": 100000,
+  "workers": 100,
+  "committedEffects": 1,
+  "durationMillis": 8128,
+  "passed": true,
+  "failureConditions": [
+    "concurrent duplicate delivery of one stable effect key",
+    "PostgreSQL unique constraint as the commit boundary"
+  ],
+  "machine": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 11,
+    "memoryBytes": 19327352832,
+    "goVersion": "go1.26.6",
+    "nodeVersion": "v22.23.1",
+    "dockerVersion": "Docker version 29.7.2, build a7dcaa6fdb"
+  },
+  "completedAt": "2026-09-01T18:23:28.887088Z"
+}

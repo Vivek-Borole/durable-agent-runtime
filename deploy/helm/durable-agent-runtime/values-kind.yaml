@@ -1,0 +1,38 @@
+images:
+  controlPlane:
+    {
+      repository: durable-agent-runtime-control-plane,
+      tag: dev,
+      pullPolicy: IfNotPresent,
+    }
+  worker:
+    {
+      repository: durable-agent-runtime-worker,
+      tag: dev,
+      pullPolicy: IfNotPresent,
+    }
+  console:
+    {
+      repository: durable-agent-runtime-console,
+      tag: dev,
+      pullPolicy: IfNotPresent,
+    }
+  migrate:
+    {
+      repository: durable-agent-runtime-migrate,
+      tag: dev,
+      pullPolicy: IfNotPresent,
+    }
+external:
+  postgresUrl: postgres://dar_control:dar-control-local-only@postgres:5432/dar
+  workerPostgresUrl: postgres://dar_worker:dar-worker-local-only@postgres:5432/dar
+  migrationPostgresUrl: postgres://dar:dar@postgres:5432/dar
+  natsUrl: nats://nats:4222
+  redisUrl: redis://redis:6379
+localDependencies: { enabled: true }
+networkPolicy: { enabled: false }
+secrets:
+  existingSecret: dar-runtime-secrets
+  create: true
+  bootstrapApiKey: replace-with-a-long-local-key
+  internalToken: synthetic-kind-internal-token-only

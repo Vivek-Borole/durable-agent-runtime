@@ -40,6 +40,18 @@ jobs:
       - run: go test -race ./...
       - run: pnpm audit --audit-level=high
       - run: pnpm evidence:check
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/durable-agent-runtime
+      - run: helm template dar deploy/helm/durable-agent-runtime -f deploy/helm/durable-agent-runtime/values-kind.yaml >/tmp/dar-rendered.yaml
+  container-and-kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: dar-v02
+      - run: ./scripts/kind-smoke.sh
   compose-integration:
     runs-on: ubuntu-latest
     steps:

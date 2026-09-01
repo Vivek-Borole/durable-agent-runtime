@@ -1,0 +1,4 @@
+FROM postgres:17-alpine
+COPY db/migrations /migrations
+COPY scripts/container-migrate.sh /usr/local/bin/container-migrate
+ENTRYPOINT ["/usr/local/bin/container-migrate"]

@@ -1,0 +1,28 @@
+{
+  "residentActiveMockRuns": 1000,
+  "warmupRuns": 1000,
+  "backlogRuns": 10000,
+  "workerProcesses": 2,
+  "succeededRuns": 10000,
+  "p50Millis": 2.107,
+  "p95Millis": 2.749,
+  "p99Millis": 3.549,
+  "passP95Under500Millis": true,
+  "durationMillis": 27880,
+  "machine": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 11,
+    "memoryBytes": 19327352832,
+    "goVersion": "go1.26.6",
+    "nodeVersion": "v22.23.1",
+    "dockerVersion": "Docker version 29.7.2, build a7dcaa6fdb"
+  },
+  "completedAt": "2026-09-01T18:25:24.352358Z",
+  "failureConditions": [
+    "synthetic mock-data-read workflows",
+    "1,000 resident workflows held at awaiting approval",
+    "JetStream at-least-once delivery",
+    "PostgreSQL queued-to-started event timestamps used as completion boundary"
+  ]
+}

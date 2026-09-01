@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic UUID idempotency fixture; it is generated test data, not a credential"
+paths = ['''services/control-plane/tests/app\.test\.ts''']
+regexTarget = "line"
+regexes = ['''idempotency-key.*00000000-0000-4000-8000-000000000001''']

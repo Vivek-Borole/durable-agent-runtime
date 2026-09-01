@@ -1,0 +1,52 @@
+{{- if .Values.localDependencies.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: postgres, labels: { app: postgres } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env: [{ name: POSTGRES_USER, value: dar }, { name: POSTGRES_PASSWORD, value: dar }, { name: POSTGRES_DB, value: dar }]
+          ports: [{ name: postgres, containerPort: 5432 }]
+          readinessProbe: { exec: { command: ["pg_isready", "-U", "dar", "-d", "dar"] }, periodSeconds: 3 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres }
+spec: { selector: { app: postgres }, ports: [{ port: 5432, targetPort: postgres }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: nats, labels: { app: nats } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: nats } }
+  template:
+    metadata: { labels: { app: nats } }
+    spec: { containers: [{ name: nats, image: "nats:2.11-alpine", args: ["-js", "-sd", "/data"], ports: [{ name: client, containerPort: 4222 }] }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: nats }
+spec: { selector: { app: nats }, ports: [{ port: 4222, targetPort: client }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: redis, labels: { app: redis } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec: { containers: [{ name: redis, image: "redis:8-alpine", ports: [{ name: redis, containerPort: 6379 }] }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis }
+spec: { selector: { app: redis }, ports: [{ port: 6379, targetPort: redis }] }
+{{- end }}

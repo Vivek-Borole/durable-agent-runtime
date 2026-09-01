@@ -1,0 +1,53 @@
+{{- $root := . -}}
+{{- range $name, $config := dict "control-plane" (dict "uid" 1000 "replicas" .Values.replicas.controlPlane "image" .Values.images.controlPlane "command" (list "node" "services/control-plane/dist/server.js") "port" 3001 "resources" .Values.resources.controlPlane) "publisher" (dict "uid" 1000 "replicas" .Values.replicas.publisher "image" .Values.images.controlPlane "command" (list "node" "services/control-plane/dist/publish.js") "port" 9092 "resources" .Values.resources.publisher) "worker" (dict "uid" 65532 "replicas" .Values.replicas.worker "image" .Values.images.worker "port" 9091 "resources" .Values.resources.worker) "console" (dict "uid" 101 "replicas" .Values.replicas.console "image" .Values.images.console "port" 8080 "resources" .Values.resources.console) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: dar-{{ $name }}, labels: { app: dar-{{ $name }} } }
+spec:
+  replicas: {{ $config.replicas }}
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector: { matchLabels: { app: dar-{{ $name }} } }
+  template:
+    metadata:
+      labels: { app: dar-{{ $name }} }
+      annotations: { dar.dev/rollout-nonce: {{ $root.Values.runtime.rolloutNonce | quote }} }
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext: { runAsNonRoot: true, runAsUser: {{ $config.uid }}, runAsGroup: {{ $config.uid }}, fsGroup: {{ $config.uid }} }
+      volumes: [{ name: tmp, emptyDir: {} }]
+      containers:
+        - name: {{ $name }}
+          image: "{{ $config.image.repository }}:{{ $config.image.tag }}"
+          imagePullPolicy: {{ $config.image.pullPolicy }}
+          {{- with $config.command }}
+          command: {{ toJson . }}
+          {{- end }}
+          securityContext: {{- include "dar.securityContext" $root | nindent 12 }}
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          resources: {{- toYaml $config.resources | nindent 12 }}
+          env:
+            - { name: HOST, value: "0.0.0.0" }
+            - { name: POSTGRES_URL, value: {{ $root.Values.external.postgresUrl | quote }} }
+            - { name: DAR_WORKER_POSTGRES_URL, value: {{ $root.Values.external.workerPostgresUrl | quote }} }
+            - { name: NATS_URL, value: {{ $root.Values.external.natsUrl | quote }} }
+            - { name: REDIS_URL, value: {{ $root.Values.external.redisUrl | quote }} }
+            - { name: DAR_BOOTSTRAP_TENANT, value: {{ $root.Values.runtime.bootstrapTenant | quote }} }
+            - { name: CONSOLE_ORIGIN, value: {{ $root.Values.runtime.consoleOrigin | quote }} }
+            - { name: DAR_WORKER_CONCURRENCY, value: {{ $root.Values.runtime.workerConcurrency | quote }} }
+            - { name: DAR_WORKER_DRAIN_TIMEOUT, value: {{ $root.Values.runtime.workerDrainTimeout | quote }} }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector:4318" }
+            - name: DAR_BOOTSTRAP_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ $root.Values.secrets.existingSecret }}, key: bootstrap-api-key } }
+            - name: DAR_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ $root.Values.secrets.existingSecret }}, key: internal-token } }
+          {{- if $config.port }}
+          ports: [{ name: http, containerPort: {{ $config.port }} }]
+          livenessProbe: { httpGet: { path: /health/live, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          {{- if or (eq $name "control-plane") (eq $name "worker") }}
+          readinessProbe: { httpGet: { path: /health/ready, port: http }, initialDelaySeconds: 5, periodSeconds: 5 }
+          {{- else }}
+          readinessProbe: { httpGet: { path: /health/live, port: http }, initialDelaySeconds: 3, periodSeconds: 10 }
+          {{- end }}
+          {{- end }}
+{{- end }}

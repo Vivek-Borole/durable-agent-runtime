@@ -1,0 +1,16 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: dar-default-deny }
+spec: { podSelector: {}, policyTypes: [Ingress, Egress] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: dar-runtime-egress }
+spec:
+  podSelector: { matchExpressions: [{ key: app, operator: In, values: [dar-control-plane, dar-publisher, dar-worker] }] }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ namespaceSelector: {} }]
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 5432 }, { protocol: TCP, port: 4222 }, { protocol: TCP, port: 6379 }, { protocol: TCP, port: 4318 }, { protocol: TCP, port: 443 }]
+{{- end }}

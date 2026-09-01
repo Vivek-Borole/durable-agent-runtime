@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,6 +25,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -34,9 +37,24 @@ type queuedRun struct {
 
 var errInvalidQueueMessage = errors.New("invalid queued run message")
 
+var (
+	queueDelay      = prometheus.NewHistogram(prometheus.HistogramOpts{Name: "dar_worker_queue_delay_seconds", Help: "Delay from durable run creation to lease acquisition.", Buckets: []float64{.005, .01, .05, .1, .25, .5, 1, 5, 30}})
+	leaseRecoveries = prometheus.NewCounter(prometheus.CounterOpts{Name: "dar_worker_lease_recoveries_total", Help: "Expired run leases recovered by another worker."})
+	runTerminals    = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "dar_worker_terminal_runs_total", Help: "Terminal workflow outcomes."}, []string{"state"})
+	effectReplays   = prometheus.NewCounter(prometheus.CounterOpts{Name: "dar_worker_effect_replays_total", Help: "Duplicate effect attempts suppressed by the durable ledger."})
+	workerFailures  = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "dar_worker_failures_total", Help: "Safe worker failure classes."}, []string{"error_class"})
+	draining        = prometheus.NewGauge(prometheus.GaugeOpts{Name: "dar_worker_draining", Help: "One while this worker is draining."})
+	metricsReady    atomic.Bool
+)
+
+func init() {
+	prometheus.MustRegister(queueDelay, leaseRecoveries, runTerminals, effectReplays, workerFailures, draining)
+}
+
 type workflowDefinition struct {
-	AllowedHosts []string          `json:"allowedHosts"`
-	Steps        []json.RawMessage `json:"steps"`
+	SchemaVersion string            `json:"schemaVersion"`
+	AllowedHosts  []string          `json:"allowedHosts"`
+	Steps         []json.RawMessage `json:"steps"`
 }
 
 type step struct {
@@ -59,9 +77,11 @@ type leasedRun struct {
 type runtimeStore struct{ pool *pgxpool.Pool }
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	receiveCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	shutdownTelemetry := startTelemetry(ctx)
+	workCtx, cancelWork := context.WithCancel(context.Background())
+	defer cancelWork()
+	shutdownTelemetry := startTelemetry(workCtx)
 	defer shutdownTelemetry(context.Background())
 	databaseURL := os.Getenv("DAR_WORKER_POSTGRES_URL")
 	if databaseURL == "" {
@@ -74,7 +94,7 @@ func main() {
 		return
 	}
 	poolConfig.MaxConns = int32(workerConcurrency())
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := pgxpool.NewWithConfig(workCtx, poolConfig)
 	if err != nil {
 		slog.Error("worker database connection failed", "error", err)
 		return
@@ -110,7 +130,7 @@ func main() {
 		slog.Error("JetStream client setup failed", "error", err)
 		return
 	}
-	consumer, err := js.CreateOrUpdateConsumer(ctx, streamName, jetstream.ConsumerConfig{
+	consumer, err := js.CreateOrUpdateConsumer(workCtx, streamName, jetstream.ConsumerConfig{
 		// Consumer names are deployment state. Bumping the name avoids silently
 		// inheriting an incompatible pre-continuous-pull consumer configuration.
 		Durable:       consumerName,
@@ -123,6 +143,9 @@ func main() {
 		slog.Error("JetStream consumer setup failed", "error", err)
 		return
 	}
+	metricsReady.Store(true)
+	shutdownMetrics := startWorkerMetricsServer()
+	defer shutdownMetrics(context.Background())
 
 	store := runtimeStore{pool: pool}
 	workerID := fmt.Sprintf("dar-worker-%s-%d", hostname(), os.Getpid())
@@ -140,15 +163,15 @@ func main() {
 		go func() {
 			defer inFlight.Done()
 			for message := range jobs {
-				if err := store.process(ctx, workerID, message.Data()); err != nil {
+				if err := store.process(workCtx, workerID, message.Data()); err != nil {
 					if errors.Is(err, errInvalidQueueMessage) {
 						slog.Warn("discarded invalid queue message")
 						_ = message.Ack()
 						continue
 					}
-				// Error values can originate in an upstream service. Keep telemetry
-				// and logs to a fixed operational class, never tenant content.
-				slog.Warn("run delivery not acknowledged", "error_class", "run_delivery_failed")
+					// Error values can originate in an upstream service. Keep telemetry
+					// and logs to a fixed operational class, never tenant content.
+					slog.Warn("run delivery not acknowledged", "error_class", "run_delivery_failed")
 					_ = message.Nak()
 					continue
 				}
@@ -157,22 +180,58 @@ func main() {
 		}()
 	}
 	slog.Info("durable agent worker started", "delivery", "at-least-once", "worker", workerID, "concurrency", concurrency)
-	for ctx.Err() == nil {
-		message, nextErr := iterator.Next(jetstream.NextContext(ctx))
+	for receiveCtx.Err() == nil {
+		message, nextErr := iterator.Next(jetstream.NextContext(receiveCtx))
 		if nextErr != nil {
-			if ctx.Err() == nil {
+			if receiveCtx.Err() == nil {
 				slog.Warn("JetStream next message failed", "error_class", "jetstream_delivery_failed")
 			}
 			continue
 		}
 		select {
 		case jobs <- message:
-		case <-ctx.Done():
+		case <-receiveCtx.Done():
 		}
 	}
+	// Stop taking new work first. In-flight handlers retain a live context so
+	// they can reach the next durable boundary during a Kubernetes drain.
+	iterator.Stop()
+	draining.Set(1)
 	close(jobs)
-	inFlight.Wait()
+	drained := make(chan struct{})
+	go func() {
+		inFlight.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		slog.Info("durable agent worker drain completed")
+	case <-time.After(workerDrainTimeout()):
+		slog.Warn("durable agent worker drain timed out", "error_class", "drain_timeout")
+		cancelWork()
+		<-drained
+	}
 	slog.Info("durable agent worker stopped")
+}
+
+func startWorkerMetricsServer() func(context.Context) error {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/health/live", func(response http.ResponseWriter, _ *http.Request) { response.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/health/ready", func(response http.ResponseWriter, _ *http.Request) {
+		if !metricsReady.Load() {
+			response.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		response.WriteHeader(http.StatusOK)
+	})
+	server := &http.Server{Addr: environmentOr("DAR_WORKER_METRICS_ADDR", ":9091"), Handler: mux, ReadHeaderTimeout: 2 * time.Second}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("worker metrics server stopped", "error_class", "metrics_server_failed")
+		}
+	}()
+	return server.Shutdown
 }
 
 func workerConcurrency() int {
@@ -180,6 +239,13 @@ func workerConcurrency() int {
 		return parsed
 	}
 	return 16
+}
+
+func workerDrainTimeout() time.Duration {
+	if parsed, err := time.ParseDuration(os.Getenv("DAR_WORKER_DRAIN_TIMEOUT")); err == nil && parsed >= time.Second && parsed <= 2*time.Minute {
+		return parsed
+	}
+	return 25 * time.Second
 }
 
 func environmentOr(name, fallback string) string {
@@ -234,10 +300,12 @@ func (s runtimeStore) claim(ctx context.Context, runID, workerID string) (*lease
 	var tenantID, definitionRaw, inputRaw []byte
 	var credentialHandle *string
 	var currentStep int
-	err = tx.QueryRow(ctx, `select r.tenant_id::text, r.current_step, r.input, w.definition, r.provider_credential_handle::text
+	var previousState string
+	var createdAt time.Time
+	err = tx.QueryRow(ctx, `select r.tenant_id::text, r.current_step, r.input, w.definition, r.provider_credential_handle::text, r.state::text, r.created_at
       from workflow_runs r join workflow_definitions w on w.id = r.workflow_id
       where r.id = $1 and (r.state = 'queued' or (r.state in ('leased', 'running') and r.lease_expires_at < now()))
-		for update of r skip locked`, runID).Scan(&tenantID, &currentStep, &inputRaw, &definitionRaw, &credentialHandle)
+		for update of r skip locked`, runID).Scan(&tenantID, &currentStep, &inputRaw, &definitionRaw, &credentialHandle, &previousState, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -259,10 +327,17 @@ func (s runtimeStore) claim(ctx context.Context, runID, workerID string) (*lease
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	queueDelay.Observe(time.Since(createdAt).Seconds())
+	if previousState != "queued" {
+		leaseRecoveries.Inc()
+	}
 	return &leasedRun{ID: runID, TenantID: string(tenantID), CurrentStep: currentStep, Input: input, Definition: definition, CredentialHandle: credentialHandle}, nil
 }
 
 func (s runtimeStore) execute(ctx context.Context, run *leasedRun) error {
+	if !supportedWorkflowSchema(run.Definition.SchemaVersion) {
+		return s.fail(ctx, run, "unsupported_workflow_schema")
+	}
 	for index := run.CurrentStep; index < len(run.Definition.Steps); index++ {
 		var current step
 		if err := json.Unmarshal(run.Definition.Steps[index], &current); err != nil {
@@ -319,6 +394,9 @@ func (s runtimeStore) execute(ctx context.Context, run *leasedRun) error {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `insert into run_events (tenant_id, run_id, event_type, detail) values ($1::uuid, $2::uuid, 'succeeded', 'All workflow steps completed')`, run.TenantID, run.ID)
+	if err == nil {
+		runTerminals.WithLabelValues("succeeded").Inc()
+	}
 	return err
 }
 
@@ -349,22 +427,56 @@ func (s runtimeStore) executeProviderModel(ctx context.Context, run *leasedRun, 
 	if baseURL == "" || model == "" {
 		return s.uncertain(ctx, run, "provider_not_configured")
 	}
-	body, _ := json.Marshal(map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": current.PromptTemplate}}})
+	if err := callOpenAICompatible(ctx, baseURL, model, credential.Credential, current.PromptTemplate); err != nil {
+		return s.uncertain(ctx, run, "provider_model_unavailable")
+	}
+	return s.recordStep(ctx, run, index, "model", "succeeded", "openai-compatible-model")
+}
+
+func callOpenAICompatible(ctx context.Context, baseURL, model, credential, prompt string) error {
+	if parsed, err := url.Parse(baseURL); err != nil || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost"))) {
+		return errors.New("provider URL is not allowed")
+	}
+	body, _ := json.Marshal(map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": prompt}}})
 	modelRequest, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(baseURL, "/")+"/v1/chat/completions", strings.NewReader(string(body)))
-	modelRequest.Header.Set("Authorization", "Bearer "+credential.Credential)
+	modelRequest.Header.Set("Authorization", "Bearer "+credential)
 	modelRequest.Header.Set("Content-Type", "application/json")
 	modelResponse, err := (&http.Client{Timeout: 20 * time.Second}).Do(modelRequest)
 	if err != nil || modelResponse.StatusCode >= 400 {
 		if modelResponse != nil {
 			modelResponse.Body.Close()
 		}
-		return s.uncertain(ctx, run, "provider_model_unavailable")
+		return errors.New("provider request unavailable")
 	}
 	defer modelResponse.Body.Close()
-	if _, err = io.ReadAll(io.LimitReader(modelResponse.Body, 1_000_001)); err != nil {
-		return s.uncertain(ctx, run, "provider_model_unavailable")
+	if err = validateProviderResponse(modelResponse.Body); err != nil {
+		return err
 	}
-	return s.recordStep(ctx, run, index, "model", "succeeded", "openai-compatible-model")
+	return nil
+}
+
+func supportedWorkflowSchema(version string) bool {
+	// Definitions written before v0.2 did not contain schemaVersion. They are
+	// deliberately interpreted as schema 1 so queued v0.1 work remains valid.
+	return version == "" || version == "1"
+}
+
+func validateProviderResponse(reader io.Reader) error {
+	body, err := io.ReadAll(io.LimitReader(reader, 1_000_001))
+	if err != nil || len(body) > 1_000_000 {
+		return errors.New("provider response unavailable")
+	}
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(body, &response) != nil || len(response.Choices) == 0 || strings.TrimSpace(response.Choices[0].Message.Content) == "" {
+		return errors.New("malformed provider response")
+	}
+	return nil
 }
 
 func (s runtimeStore) executeTool(ctx context.Context, run *leasedRun, index int, current step) error {
@@ -379,6 +491,7 @@ func (s runtimeStore) executeTool(ctx context.Context, run *leasedRun, index int
 			return err
 		}
 		if command.RowsAffected() == 0 {
+			effectReplays.Inc()
 			return s.recordStep(ctx, run, index, "tool", "succeeded", "mock-ticket-replayed")
 		}
 		return s.recordStep(ctx, run, index, "tool", "succeeded", "mock-ticket-committed")
@@ -434,22 +547,30 @@ func (s runtimeStore) awaitApproval(ctx context.Context, run *leasedRun, index i
 }
 
 func (s runtimeStore) fail(ctx context.Context, run *leasedRun, code string) error {
+	workerFailures.WithLabelValues(code).Inc()
 	_, err := s.pool.Exec(ctx, `update workflow_runs set state = 'failed', lease_owner = null, lease_expires_at = null, last_error_code = $1,
       terminal_evidence = jsonb_build_object('errorCode', $1) where id = $2`, code, run.ID)
 	if err != nil {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `insert into run_events (tenant_id, run_id, event_type, detail) values ($1::uuid, $2::uuid, 'failed', $3)`, run.TenantID, run.ID, code)
+	if err == nil {
+		runTerminals.WithLabelValues("failed").Inc()
+	}
 	return err
 }
 
 func (s runtimeStore) uncertain(ctx context.Context, run *leasedRun, code string) error {
+	workerFailures.WithLabelValues(code).Inc()
 	_, err := s.pool.Exec(ctx, `update workflow_runs set state = 'uncertain', lease_owner = null, lease_expires_at = null, last_error_code = $1,
       terminal_evidence = jsonb_build_object('errorCode', $1) where id = $2`, code, run.ID)
 	if err != nil {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `insert into run_events (tenant_id, run_id, event_type, detail) values ($1::uuid, $2::uuid, 'uncertain', $3)`, run.TenantID, run.ID, code)
+	if err == nil {
+		runTerminals.WithLabelValues("uncertain").Inc()
+	}
 	return err
 }
 

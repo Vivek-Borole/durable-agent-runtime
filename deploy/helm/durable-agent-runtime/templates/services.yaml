@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata: { name: dar-control-plane, labels: { app: dar-control-plane } }
+spec:
+  selector: { app: dar-control-plane }
+  ports: [{ name: http, port: 3001, targetPort: http }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: dar-console, labels: { app: dar-console } }
+spec:
+  selector: { app: dar-console }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: dar-worker-metrics, labels: { app: dar-worker } }
+spec:
+  clusterIP: None
+  selector: { app: dar-worker }
+  ports: [{ name: metrics, port: 9091, targetPort: http }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: dar-publisher-metrics, labels: { app: dar-publisher } }
+spec:
+  selector: { app: dar-publisher }
+  ports: [{ name: metrics, port: 9092, targetPort: http }]

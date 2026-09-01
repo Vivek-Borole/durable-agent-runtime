@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Durable Agent Runtime API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
     Tenant-scoped API for constrained, recoverable workflows. Provider
     credentials and unredacted model/tool data are never returned.
@@ -15,13 +15,26 @@ paths:
       security: []
       summary: Process health check
       responses:
-        '200': { description: Healthy }
+        "200": { description: Healthy }
+  /health/live:
+    get:
+      security: []
+      summary: Process liveness check
+      responses:
+        "200": { description: Process is alive }
+  /health/ready:
+    get:
+      security: []
+      summary: Dependency readiness check
+      responses:
+        "200": { description: Runtime is ready }
+        "503": { description: A required dependency is unavailable }
   /metrics:
     get:
       security: []
       summary: Prometheus metrics without tenant labels
       responses:
-        '200': { description: Prometheus text exposition }
+        "200": { description: Prometheus text exposition }
   /v1/workflows:
     post:
       summary: Register an immutable workflow definition
@@ -29,12 +42,20 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/WorkflowDefinition' }
+            schema: { $ref: "#/components/schemas/WorkflowDefinition" }
       responses:
-        '201': { description: Workflow created, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowResponse' } } } }
-        '400': { $ref: '#/components/responses/InvalidRequest' }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        "201":
+          {
+            description: Workflow created,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/WorkflowResponse" } },
+              },
+          }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/runs:
     post:
       summary: Create or replay a tenant-scoped idempotent run
@@ -47,50 +68,113 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/CreateRun' }
+            schema: { $ref: "#/components/schemas/CreateRun" }
       responses:
-        '201': { description: Run created, content: { application/json: { schema: { $ref: '#/components/schemas/RunResponse' } } } }
-        '200': { description: Existing idempotent run returned, content: { application/json: { schema: { $ref: '#/components/schemas/RunResponse' } } } }
-        '400': { $ref: '#/components/responses/InvalidRequest' }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/QuotaExceeded' }
+        "201":
+          {
+            description: Run created,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/RunResponse" } },
+              },
+          }
+        "200":
+          {
+            description: Existing idempotent run returned,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/RunResponse" } },
+              },
+          }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/QuotaExceeded" }
   /v1/runs/{runId}:
     get:
       summary: Read a run and its redacted event timeline
-      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
       responses:
-        '200': { description: Run found, content: { application/json: { schema: { $ref: '#/components/schemas/RunResponse' } } } }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        "200":
+          {
+            description: Run found,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/RunResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/runs/{runId}/approve:
     post:
       summary: Approve the currently awaiting-approval step and requeue the next step
-      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
       responses:
-        '200': { description: Run requeued, content: { application/json: { schema: { $ref: '#/components/schemas/RunResponse' } } } }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/InvalidState' }
+        "200":
+          {
+            description: Run requeued,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/RunResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/InvalidState" }
   /v1/runs/{runId}/cancel:
     post:
       summary: Cancel an unfinished run
-      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
       responses:
-        '200': { description: Run cancelled, content: { application/json: { schema: { $ref: '#/components/schemas/RunResponse' } } } }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/InvalidState' }
+        "200":
+          {
+            description: Run cancelled,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/RunResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/InvalidState" }
   /v1/audit:
     get:
       summary: List tenant audit records for owners
       responses:
-        '200': { description: Audit records, content: { application/json: { schema: { type: object, required: [records], properties: { records: { type: array, items: { $ref: '#/components/schemas/AuditRecord' } } } } } } }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        "200":
+          {
+            description: Audit records,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        required: [records],
+                        properties:
+                          {
+                            records:
+                              {
+                                type: array,
+                                items:
+                                  { $ref: "#/components/schemas/AuditRecord" },
+                              },
+                          },
+                      },
+                  },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 components:
   securitySchemes:
     TenantApiKey:
@@ -116,40 +200,111 @@ components:
       type: object
       required: [name, version, steps, budgetCents]
       properties:
-        name: { type: string, pattern: '^[a-z0-9-]+$' }
-        version: { type: string, pattern: '^v[0-9]+$' }
+        schemaVersion:
+          {
+            type: string,
+            enum: ["1"],
+            default: "1",
+            description: Backward-compatible workflow-definition schema.,
+          }
+        name: { type: string, pattern: "^[a-z0-9-]+$" }
+        version: { type: string, pattern: "^v[0-9]+$" }
         budgetCents: { type: integer, minimum: 0 }
         allowedHosts: { type: array, items: { type: string } }
-        steps: { type: array, minItems: 1, items: { $ref: '#/components/schemas/WorkflowStep' } }
+        steps:
+          {
+            type: array,
+            minItems: 1,
+            items: { $ref: "#/components/schemas/WorkflowStep" },
+          }
     WorkflowStep:
       oneOf:
-        - { type: object, required: [kind, provider, promptTemplate], properties: { kind: { const: model }, provider: { enum: [mock, openai_compatible] }, promptTemplate: { type: string } } }
-        - { type: object, required: [kind, operation, input], properties: { kind: { const: transform }, operation: { enum: [extract_json, template] }, input: { type: string } } }
-        - { type: object, required: [kind, tool], properties: { kind: { const: tool }, tool: { enum: [allowlisted_http_fetch, mock_ticket_write, mock_data_read] }, sideEffect: { type: boolean } } }
-        - { type: object, required: [kind, reason], properties: { kind: { const: approval }, reason: { type: string } } }
+        - {
+            type: object,
+            required: [kind, provider, promptTemplate],
+            properties:
+              {
+                kind: { const: model },
+                provider: { enum: [mock, openai_compatible] },
+                promptTemplate: { type: string },
+              },
+          }
+        - {
+            type: object,
+            required: [kind, operation, input],
+            properties:
+              {
+                kind: { const: transform },
+                operation: { enum: [extract_json, template] },
+                input: { type: string },
+              },
+          }
+        - {
+            type: object,
+            required: [kind, tool],
+            properties:
+              {
+                kind: { const: tool },
+                tool:
+                  {
+                    enum:
+                      [
+                        allowlisted_http_fetch,
+                        mock_ticket_write,
+                        mock_data_read,
+                      ],
+                  },
+                sideEffect: { type: boolean },
+              },
+          }
+        - {
+            type: object,
+            required: [kind, reason],
+            properties: { kind: { const: approval }, reason: { type: string } },
+          }
     CreateRun:
       type: object
       required: [workflowId]
       properties:
         workflowId: { type: string, format: uuid }
         input: { type: object, additionalProperties: true }
-        providerCredential: { type: string, writeOnly: true, description: Never persisted or returned. }
+        providerCredential:
+          {
+            type: string,
+            writeOnly: true,
+            description: Never persisted or returned.,
+          }
     Run:
       type: object
       required: [id, state, workflowId, budgetCents, events]
       properties:
         id: { type: string, format: uuid }
         workflowId: { type: string, format: uuid }
-        state: { enum: [queued, leased, running, awaiting_approval, succeeded, failed, cancelled, uncertain] }
+        state:
+          {
+            enum:
+              [
+                queued,
+                leased,
+                running,
+                awaiting_approval,
+                succeeded,
+                failed,
+                cancelled,
+                uncertain,
+              ],
+          }
         budgetCents: { type: integer }
-        events: { type: array, items: { $ref: '#/components/schemas/RunEvent' } }
+        events:
+          { type: array, items: { $ref: "#/components/schemas/RunEvent" } }
     RunEvent:
       type: object
       required: [at, type, detail]
       properties:
         at: { type: string, format: date-time }
         type: { type: string }
-        detail: { type: string, description: Redacted operational evidence only. }
+        detail:
+          { type: string, description: Redacted operational evidence only. }
         traceId: { type: string }
     AuditRecord:
       type: object
@@ -168,5 +323,5 @@ components:
       type: object
       required: [run]
       properties:
-        run: { $ref: '#/components/schemas/Run' }
+        run: { $ref: "#/components/schemas/Run" }
         replayed: { type: boolean }

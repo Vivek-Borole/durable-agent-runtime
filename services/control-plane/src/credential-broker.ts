@@ -12,7 +12,10 @@ export class CredentialBroker {
   issue(credential: string): string {
     this.purge();
     const handle = randomUUID();
-    this.entries.set(handle, { credential, expiresAt: Date.now() + this.ttlMs });
+    this.entries.set(handle, {
+      credential,
+      expiresAt: Date.now() + this.ttlMs,
+    });
     return handle;
   }
 
@@ -29,6 +32,7 @@ export class CredentialBroker {
 
   private purge(): void {
     const now = Date.now();
-    for (const [handle, entry] of this.entries) if (entry.expiresAt <= now) this.entries.delete(handle);
+    for (const [handle, entry] of this.entries)
+      if (entry.expiresAt <= now) this.entries.delete(handle);
   }
 }
