@@ -25,7 +25,7 @@ Publication record (20 August 2026):
 - [x] repository visibility changed from private to public only after the tag
       and release assets existed.
 
-v0.2 candidate evidence (1 September 2026):
+v0.2 release evidence (2 September 2026):
 
 - [x] two-worker local-kind rollout completed an approval-gated run after one
       recovered attempt with exactly one committed mock effect;
@@ -34,9 +34,9 @@ v0.2 candidate evidence (1 September 2026):
       workflows at 2.749 ms p95 scheduling delay;
 - [x] Helm lint, container builds, TypeScript tests, Go race tests, evidence
       validation, high-severity dependency audit, and local secret scan pass;
-- [x] [remote GitHub Actions verification](https://github.com/Vivek-Borole/durable-agent-runtime/actions/runs/33614700420)
-      passed for candidate commit `72b46517534b4ea68d43ec03dcdf0afea8483d4e`;
-- [ ] signed `v0.2.0` tag and release artifacts.
+- [x] [remote GitHub Actions verification](https://github.com/Vivek-Borole/durable-agent-runtime/actions/runs/33615379736)
+      passed for merge commit `6cd53a85122fb78960735b604b35f8d30d0d2d4e`;
+- [x] [annotated `v0.2.0` tag and SHA-256-attested release artifacts](https://github.com/Vivek-Borole/durable-agent-runtime/releases/tag/v0.2.0).
 
 `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` are
 already present and must be checked again at release time.

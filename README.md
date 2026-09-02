@@ -6,11 +6,11 @@ the server, side effects require explicit approval, and retries are idempotent.
 
 ## Status
 
-The verified public release is `v0.1.0`. The `v0.2.0` candidate adds a
+The verified public release is [`v0.2.0`](https://github.com/Vivek-Borole/durable-agent-runtime/releases/tag/v0.2.0). It adds a
 backward-compatible workflow schema, bounded Kubernetes worker draining,
 two-worker rolling-recovery automation, non-root container images, a Helm
-deployment, and explicit Prometheus SLOs. It is not called released until the
-kind recovery and benchmark evidence gates pass.
+deployment, and explicit Prometheus SLOs. Its kind recovery, fault-injection,
+benchmark, compatibility, and security gates passed on synthetic workloads.
 
 The runtime includes versioned workflow/run contracts, tenant
 scoping, API-key authentication, PostgreSQL persistence with forced RLS,
@@ -70,13 +70,12 @@ and [synthetic console screenshots](docs/evidence/screenshots/).
 The evidence package also contains a real worker-process interruption recovery
 run, exported OpenTelemetry trace output, a Grafana dashboard screenshot, a
 clean-Compose smoke log, and an animated synthetic walkthrough. Remote CI,
-GitHub Pages publication, a public repository, and the signed `v0.1.0` release
-are all available. See the [release](https://github.com/Vivek-Borole/durable-agent-runtime/releases/tag/v0.1.0)
+GitHub Pages publication, a public repository, and the attested `v0.2.0` release
+are all available. See the [release](https://github.com/Vivek-Borole/durable-agent-runtime/releases/tag/v0.2.0)
 and [evidence site](https://vivek-borole.github.io/durable-agent-runtime/).
 
-The v0.2 gates intentionally reuse the same 100,000-attempt and
-1,000-active/10,000-backlog thresholds. New results must be stored separately
-and must not overwrite the immutable v0.1 evidence.
+The v0.2 evidence preserves the immutable v0.1 reports and records its rerun in
+separate `-v0.2` files.
 
 ## Interview map
 
