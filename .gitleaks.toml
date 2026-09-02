@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic UUID idempotency fixture; it is generated test data, not a credential"
+paths = ['''services/control-plane/tests/app\.test\.ts''']
+regexTarget = "line"
+regexes = ['''idempotency-key.*00000000-0000-4000-8000-000000000001''']
+
+[[allowlists]]
+description = "Removed local-kind synthetic key from the first v0.2 candidate commit"
+paths = ['''scripts/kind-smoke\.sh''']
+regexTarget = "line"
+regexes = ['''x-api-key: replace-with-a-long-local-key''']

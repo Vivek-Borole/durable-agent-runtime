@@ -1,0 +1,158 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: dar-otel-config }
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4317 }
+          http: { endpoint: 0.0.0.0:4318 }
+    processors: { batch: {} }
+    exporters: { debug: { verbosity: basic } }
+    service:
+      pipelines:
+        traces: { receivers: [otlp], processors: [batch], exporters: [debug] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: otel-collector, labels: { app: otel-collector } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: otel-collector } }
+  template:
+    metadata: { labels: { app: otel-collector } }
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.126.0
+          args: ["--config=/etc/otel/config.yaml"]
+          ports: [{ name: otlp-http, containerPort: 4318 }]
+          volumeMounts: [{ name: config, mountPath: /etc/otel, readOnly: true }]
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] }, runAsNonRoot: true, readOnlyRootFilesystem: true, seccompProfile: { type: RuntimeDefault } }
+      volumes: [{ name: config, configMap: { name: dar-otel-config } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: otel-collector }
+spec: { selector: { app: otel-collector }, ports: [{ name: otlp-http, port: 4318, targetPort: otlp-http }] }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: dar-prometheus-config }
+data:
+  prometheus.yml: |
+    global: { scrape_interval: 5s }
+    rule_files: [/etc/prometheus/rules/*.yaml]
+    scrape_configs:
+      - job_name: control-plane
+        static_configs: [{ targets: [dar-control-plane:3001] }]
+      - job_name: publisher
+        static_configs: [{ targets: [dar-publisher-metrics:9092] }]
+      - job_name: workers
+        dns_sd_configs:
+          - names: [dar-worker-metrics.{{ .Release.Namespace }}.svc.cluster.local]
+            type: A
+            port: 9091
+  slo-rules.yaml: |
+    groups:
+      - name: dar-slos
+        rules:
+          - record: dar:scheduling_delay_seconds:p95_5m
+            expr: histogram_quantile(0.95, sum(rate(dar_worker_queue_delay_seconds_bucket[5m])) by (le))
+          - alert: DARSchedulingDelaySLOBreach
+            expr: dar:scheduling_delay_seconds:p95_5m > 0.5
+            for: 5m
+            labels: { severity: warning }
+            annotations: { summary: "Scheduling p95 is above the documented 500 ms SLO" }
+          - alert: DARUncertainRun
+            expr: increase(dar_worker_terminal_runs_total{state="uncertain"}[5m]) > 0
+            labels: { severity: critical }
+            annotations: { summary: "A workflow ended in an uncertain state" }
+          - alert: DAROutboxBacklog
+            expr: dar_outbox_backlog > 100
+            for: 2m
+            labels: { severity: warning }
+            annotations: { summary: "Durable outbox publication is falling behind" }
+          - alert: DARProviderFailures
+            expr: increase(dar_worker_failures_total{error_class=~"provider_.*"}[5m]) > 0
+            labels: { severity: warning }
+            annotations: { summary: "A provider call failed safely" }
+          - alert: DARQuotaRejections
+            expr: increase(dar_quota_rejections_total[5m]) > 0
+            labels: { severity: info }
+            annotations: { summary: "Database-authoritative tenant quota rejected a run" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus, labels: { app: prometheus } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.6.0
+          args: ["--config.file=/etc/prometheus/prometheus.yml"]
+          ports: [{ name: http, containerPort: 9090 }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus/prometheus.yml, subPath: prometheus.yml, readOnly: true }
+            - { name: config, mountPath: /etc/prometheus/rules/slo-rules.yaml, subPath: slo-rules.yaml, readOnly: true }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] }, runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, readOnlyRootFilesystem: true, seccompProfile: { type: RuntimeDefault } }
+      volumes: [{ name: config, configMap: { name: dar-prometheus-config } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus }
+spec: { selector: { app: prometheus }, ports: [{ name: http, port: 9090, targetPort: http }] }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: dar-grafana-provisioning }
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - { name: Prometheus, type: prometheus, access: proxy, url: http://prometheus:9090, isDefault: true }
+  dashboard.yaml: |
+    apiVersion: 1
+    providers:
+      - name: DAR
+        folder: Runtime
+        type: file
+        options: { path: /var/lib/grafana/dashboards }
+  runtime.json: |
+    {"title":"Durable Agent Runtime v0.2","schemaVersion":39,"panels":[{"type":"timeseries","title":"Scheduling p95","targets":[{"expr":"dar:scheduling_delay_seconds:p95_5m"}],"gridPos":{"h":8,"w":12,"x":0,"y":0}},{"type":"stat","title":"Outbox backlog","targets":[{"expr":"dar_outbox_backlog"}],"gridPos":{"h":8,"w":6,"x":12,"y":0}},{"type":"timeseries","title":"Terminal states","targets":[{"expr":"sum(rate(dar_worker_terminal_runs_total[5m])) by (state)"}],"gridPos":{"h":8,"w":18,"x":0,"y":8}}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grafana, labels: { app: grafana } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grafana } }
+  template:
+    metadata: { labels: { app: grafana } }
+    spec:
+      securityContext: { runAsUser: 472, runAsGroup: 472, fsGroup: 472, runAsNonRoot: true }
+      containers:
+        - name: grafana
+          image: grafana/grafana:12.1.0
+          env: [{ name: GF_AUTH_ANONYMOUS_ENABLED, value: "true" }, { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }, { name: GF_PLUGINS_PREINSTALL_SYNC, value: "" }]
+          ports: [{ name: http, containerPort: 3000 }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/grafana }
+            - { name: tmp, mountPath: /tmp }
+            - { name: config, mountPath: /etc/grafana/provisioning/datasources/datasource.yaml, subPath: datasource.yaml, readOnly: true }
+            - { name: config, mountPath: /etc/grafana/provisioning/dashboards/dashboard.yaml, subPath: dashboard.yaml, readOnly: true }
+            - { name: config, mountPath: /var/lib/grafana/dashboards/runtime.json, subPath: runtime.json, readOnly: true }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] }, readOnlyRootFilesystem: true, seccompProfile: { type: RuntimeDefault } }
+      volumes: [{ name: data, emptyDir: {} }, { name: tmp, emptyDir: {} }, { name: config, configMap: { name: dar-grafana-provisioning } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: grafana }
+spec: { selector: { app: grafana }, ports: [{ name: http, port: 3000, targetPort: http }] }
+{{- end }}

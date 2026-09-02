@@ -1,0 +1,21 @@
+FROM node:22-alpine AS build
+RUN corepack enable
+WORKDIR /workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/contracts/package.json packages/contracts/tsconfig.json ./packages/contracts/
+COPY services/control-plane/package.json services/control-plane/tsconfig.json ./services/control-plane/
+RUN pnpm install --frozen-lockfile
+COPY packages/contracts ./packages/contracts
+COPY services/control-plane ./services/control-plane
+RUN pnpm --filter @dar/control-plane build
+
+FROM node:22-alpine
+ENV NODE_ENV=production
+WORKDIR /workspace
+COPY --from=build --chown=node:node /workspace/package.json /workspace/pnpm-lock.yaml /workspace/pnpm-workspace.yaml ./
+COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=build --chown=node:node /workspace/packages/contracts ./packages/contracts
+COPY --from=build --chown=node:node /workspace/services/control-plane ./services/control-plane
+USER node
+EXPOSE 3001
+CMD ["node", "services/control-plane/dist/server.js"]

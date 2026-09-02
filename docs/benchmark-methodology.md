@@ -11,4 +11,3 @@ integration milestone. Reports must record:
 The first target is 1,000 active mock workflows plus a 10,000-run backlog after
 warmup, with p95 scheduling delay at or below 500 ms. Failure runs are reported
 separately and never blended into a success metric.
-

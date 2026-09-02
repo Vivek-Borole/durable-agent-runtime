@@ -11,6 +11,8 @@ describe("operational redaction", () => {
   });
 
   it("never returns arbitrary exception text as an error class", () => {
-    expect(safeErrorClass(new Error("password=do-not-log"))).toBe("runtime_operation_failed");
+    expect(safeErrorClass(new Error("password=do-not-log"))).toBe(
+      "runtime_operation_failed",
+    );
   });
 });

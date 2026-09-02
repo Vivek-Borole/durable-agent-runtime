@@ -2,21 +2,43 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const contract = readFileSync(resolve(import.meta.dirname, "../../../contracts/openapi.yaml"), "utf8");
+const contract = readFileSync(
+  resolve(import.meta.dirname, "../../../contracts/openapi.yaml"),
+  "utf8",
+);
+const compatibility = JSON.parse(
+  readFileSync(
+    resolve(import.meta.dirname, "../../../contracts/v1-compatibility.json"),
+    "utf8",
+  ),
+) as {
+  requiredRoutes: string[];
+  runStates: string[];
+  idempotencyKey: { minimum: number; maximum: number };
+};
 
 describe("OpenAPI v1 compatibility surface", () => {
   it("retains every supported public route and idempotency requirement", () => {
-    for (const route of ["/healthz:", "/metrics:", "/v1/workflows:", "/v1/runs:", "/v1/runs/{runId}:", "/v1/runs/{runId}/approve:", "/v1/runs/{runId}/cancel:", "/v1/audit:"]) {
+    for (const route of [
+      ...compatibility.requiredRoutes,
+      "/health/live:",
+      "/health/ready:",
+    ]) {
       expect(contract).toContain(route);
     }
     expect(contract).toContain("Idempotency-Key");
-    expect(contract).toContain("minLength: 16");
-    expect(contract).toContain("maxLength: 128");
+    expect(contract).toContain(
+      `minLength: ${compatibility.idempotencyKey.minimum}`,
+    );
+    expect(contract).toContain(
+      `maxLength: ${compatibility.idempotencyKey.maximum}`,
+    );
   });
 
   it("documents credential non-persistence and every legal run state", () => {
     expect(contract).toContain("writeOnly: true");
     expect(contract).toContain("Never persisted or returned.");
-    for (const state of ["queued", "leased", "running", "awaiting_approval", "succeeded", "failed", "cancelled", "uncertain"]) expect(contract).toContain(state);
+    for (const state of compatibility.runStates)
+      expect(contract).toContain(state);
   });
 });

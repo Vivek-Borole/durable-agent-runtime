@@ -1,0 +1,7 @@
+.git
+node_modules
+**/node_modules
+**/dist
+docs/evidence/raw
+.DS_Store
+coverage

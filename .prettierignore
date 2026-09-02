@@ -1,0 +1,5 @@
+deploy/helm/**/templates/**
+docs/evidence/**
+docs/index.html
+infra/grafana/dashboards/**
+pnpm-lock.yaml

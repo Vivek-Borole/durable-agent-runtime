@@ -1,0 +1,68 @@
+images:
+  controlPlane:
+    {
+      repository: durable-agent-runtime-control-plane,
+      tag: v0.2.0,
+      pullPolicy: IfNotPresent,
+    }
+  worker:
+    {
+      repository: durable-agent-runtime-worker,
+      tag: v0.2.0,
+      pullPolicy: IfNotPresent,
+    }
+  console:
+    {
+      repository: durable-agent-runtime-console,
+      tag: v0.2.0,
+      pullPolicy: IfNotPresent,
+    }
+  migrate:
+    {
+      repository: durable-agent-runtime-migrate,
+      tag: v0.2.0,
+      pullPolicy: IfNotPresent,
+    }
+replicas: { controlPlane: 1, worker: 2, publisher: 1, console: 1 }
+external:
+  postgresUrl: ""
+  workerPostgresUrl: ""
+  migrationPostgresUrl: ""
+  natsUrl: "nats://nats:4222"
+  redisUrl: "redis://redis:6379"
+runtime:
+  bootstrapTenant: demo-tenant
+  consoleOrigin: http://127.0.0.1:8080
+  workerConcurrency: 16
+  workerDrainTimeout: 25s
+  rolloutNonce: stable
+secrets:
+  existingSecret: dar-runtime-secrets
+  create: false
+  bootstrapApiKey: ""
+  internalToken: ""
+service: { apiPort: 3001, consolePort: 8080 }
+resources:
+  controlPlane:
+    {
+      requests: { cpu: 100m, memory: 128Mi },
+      limits: { cpu: 500m, memory: 384Mi },
+    }
+  worker:
+    {
+      requests: { cpu: 100m, memory: 128Mi },
+      limits: { cpu: "1", memory: 512Mi },
+    }
+  publisher:
+    {
+      requests: { cpu: 50m, memory: 96Mi },
+      limits: { cpu: 250m, memory: 256Mi },
+    }
+  console:
+    {
+      requests: { cpu: 20m, memory: 32Mi },
+      limits: { cpu: 100m, memory: 96Mi },
+    }
+localDependencies: { enabled: false }
+networkPolicy: { enabled: true }
+monitoring: { enabled: true }
