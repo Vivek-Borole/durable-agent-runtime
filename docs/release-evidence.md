@@ -34,7 +34,8 @@ v0.2 candidate evidence (1 September 2026):
       workflows at 2.749 ms p95 scheduling delay;
 - [x] Helm lint, container builds, TypeScript tests, Go race tests, evidence
       validation, high-severity dependency audit, and local secret scan pass;
-- [ ] remote GitHub Actions verification for the candidate commit;
+- [x] [remote GitHub Actions verification](https://github.com/Vivek-Borole/durable-agent-runtime/actions/runs/33614700420)
+      passed for candidate commit `72b46517534b4ea68d43ec03dcdf0afea8483d4e`;
 - [ ] signed `v0.2.0` tag and release artifacts.
 
 `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` are
