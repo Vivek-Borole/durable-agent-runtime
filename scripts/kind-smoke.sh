@@ -40,28 +40,29 @@ forward_pid=$!
 trap 'kill "$forward_pid" 2>/dev/null || true' EXIT INT TERM
 sleep 2
 curl --fail --silent http://127.0.0.1:18081/health/ready >/dev/null
+api_key=$(kubectl --context "kind-$cluster" -n "$namespace" get secret dar-runtime-secrets -o jsonpath='{.data.bootstrap-api-key}' | base64 --decode)
 
 workflow_id=$(curl --fail --silent -X POST http://127.0.0.1:18081/v1/workflows \
-  -H 'content-type: application/json' -H 'x-tenant-id: demo-tenant' -H 'x-api-key: replace-with-a-long-local-key' \
+  -H 'content-type: application/json' -H 'x-tenant-id: demo-tenant' -H "x-api-key: $api_key" \
   --data "{\"schemaVersion\":\"1\",\"name\":\"kind-smoke-$(date +%s)\",\"version\":\"v1\",\"budgetCents\":10,\"steps\":[{\"kind\":\"tool\",\"tool\":\"mock_data_read\",\"sideEffect\":false},{\"kind\":\"approval\",\"reason\":\"synthetic kind smoke\"},{\"kind\":\"tool\",\"tool\":\"mock_ticket_write\",\"sideEffect\":true}]}" | jq -r '.workflow.id')
 run_id=$(curl --fail --silent -X POST http://127.0.0.1:18081/v1/runs \
-  -H 'content-type: application/json' -H 'x-tenant-id: demo-tenant' -H 'x-api-key: replace-with-a-long-local-key' \
+  -H 'content-type: application/json' -H 'x-tenant-id: demo-tenant' -H "x-api-key: $api_key" \
   -H "idempotency-key: kind-smoke-$(date +%s)-0000000000000000" \
   --data "{\"workflowId\":\"$workflow_id\",\"input\":{\"fixture\":\"synthetic\"}}" | jq -r '.run.id')
 
 for _ in $(seq 1 60); do
-  state=$(curl --fail --silent http://127.0.0.1:18081/v1/runs/"$run_id" -H 'x-tenant-id: demo-tenant' -H 'x-api-key: replace-with-a-long-local-key' | jq -r '.run.state')
+  state=$(curl --fail --silent http://127.0.0.1:18081/v1/runs/"$run_id" -H 'x-tenant-id: demo-tenant' -H "x-api-key: $api_key" | jq -r '.run.state')
   [ "$state" = awaiting_approval ] && break
   sleep 1
 done
 [ "${state:-}" = awaiting_approval ] || { echo "run did not reach approval: ${state:-unknown}" >&2; exit 1; }
 
-curl --fail --silent -X POST http://127.0.0.1:18081/v1/runs/"$run_id"/approve -H 'x-tenant-id: demo-tenant' -H 'x-api-key: replace-with-a-long-local-key' >/dev/null
+curl --fail --silent -X POST http://127.0.0.1:18081/v1/runs/"$run_id"/approve -H 'x-tenant-id: demo-tenant' -H "x-api-key: $api_key" >/dev/null
 kubectl --context "kind-$cluster" -n "$namespace" rollout restart deployment/dar-worker
 kubectl --context "kind-$cluster" -n "$namespace" rollout status deployment/dar-worker --timeout=180s
 
 for _ in $(seq 1 60); do
-  state=$(curl --fail --silent http://127.0.0.1:18081/v1/runs/"$run_id" -H 'x-tenant-id: demo-tenant' -H 'x-api-key: replace-with-a-long-local-key' | jq -r '.run.state')
+  state=$(curl --fail --silent http://127.0.0.1:18081/v1/runs/"$run_id" -H 'x-tenant-id: demo-tenant' -H "x-api-key: $api_key" | jq -r '.run.state')
   [ "$state" = succeeded ] && break
   sleep 1
 done
